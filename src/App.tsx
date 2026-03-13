@@ -37,7 +37,12 @@ export default function App() {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : null;
+    if (!saved || saved === 'undefined') return null;
+    try {
+      return JSON.parse(saved);
+    } catch (e) {
+      return null;
+    }
   });
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -131,8 +136,8 @@ export default function App() {
         method: 'POST',
         body: JSON.stringify({ username, password })
       });
-      setUser(data.user);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      setUser(data);
+      localStorage.setItem('user', JSON.stringify(data));
       navigate('/');
     } finally {
       setIsLoading(false);

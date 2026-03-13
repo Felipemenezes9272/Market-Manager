@@ -1,5 +1,6 @@
 export const apiFetch = async (url: string, options: RequestInit = {}) => {
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
+  const savedUser = localStorage.getItem('user');
+  const user = (savedUser && savedUser !== 'undefined') ? JSON.parse(savedUser) : null;
   const headers = {
     ...options.headers as any,
     'Content-Type': 'application/json',
