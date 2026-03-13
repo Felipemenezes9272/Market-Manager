@@ -18,8 +18,9 @@ app.use(express.json());
 // Middleware to check if Supabase is configured
 app.use("/api", (req, res, next) => {
   if (!supabase && req.path !== "/health") {
+    console.error("Supabase not configured. Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.");
     return res.status(503).json({ 
-      error: "Servidor não configurado. Por favor, configure as chaves do Supabase nas variáveis de ambiente." 
+      error: "Servidor não configurado. Por favor, adicione SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente do AI Studio (Menu Settings)." 
     });
   }
   next();

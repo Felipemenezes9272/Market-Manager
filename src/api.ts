@@ -9,6 +9,7 @@ export const apiFetch = async (url: string, options: RequestInit = {}) => {
     headers['x-user-id'] = user.id.toString();
   }
 
+  console.log(`Fetching: ${url}`);
   const response = await fetch(url, { ...options, headers });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
