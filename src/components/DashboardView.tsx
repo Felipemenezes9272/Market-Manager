@@ -27,9 +27,25 @@ interface DashboardProps {
   aiInsights: string;
   onAnalyze: () => void;
   isAnalyzing: boolean;
+  cashSession: any;
+  onOpenCash: (val: number) => Promise<void>;
+  onCloseCash: (id: number, val: number) => Promise<void>;
 }
 
-export default function DashboardView({ stats, dashboardConfig, aiInsights, onAnalyze, isAnalyzing }: DashboardProps) {
+export default function DashboardView({ 
+  stats, 
+  dashboardConfig, 
+  aiInsights, 
+  onAnalyze, 
+  isAnalyzing,
+  cashSession,
+  onOpenCash,
+  onCloseCash
+}: DashboardProps) {
+  const [showOpenModal, setShowOpenModal] = React.useState(false);
+  const [showCloseModal, setShowCloseModal] = React.useState(false);
+  const [cashValue, setCashValue] = React.useState('0');
+
   const statCards = [
     { 
       id: 'showSalesToday', 
@@ -79,6 +95,38 @@ export default function DashboardView({ stats, dashboardConfig, aiInsights, onAn
         >
           <Sparkles size={20} className={cn(isAnalyzing && "animate-pulse")} />
           {isAnalyzing ? 'ANALISANDO...' : 'INSIGHTS IA'}
+        </button>
+      </div>
+
+      {/* Cash Session Status */}
+      <div className={cn(
+        "p-8 rounded-[2.5rem] border flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm",
+        cashSession ? "bg-emerald-50 border-emerald-100 dark:bg-emerald-500/5 dark:border-emerald-500/20" : "bg-rose-50 border-rose-100 dark:bg-rose-500/5 dark:border-rose-500/20"
+      )}>
+        <div className="flex items-center gap-6 text-center md:text-left">
+          <div className={cn(
+            "w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg",
+            cashSession ? "bg-emerald-500 text-white" : "bg-rose-500 text-white"
+          )}>
+            <DollarSign size={32} />
+          </div>
+          <div>
+            <h3 className={cn("text-xl font-black uppercase tracking-tight", cashSession ? "text-emerald-900 dark:text-emerald-400" : "text-rose-900 dark:text-rose-400")}>
+              Status do Caixa: {cashSession ? 'ABERTO' : 'FECHADO'}
+            </h3>
+            <p className={cn("font-bold text-sm", cashSession ? "text-emerald-600/70" : "text-rose-600/70")}>
+              {cashSession ? `Aberto desde ${new Date(cashSession.opened_at).toLocaleTimeString()}` : 'Abra o caixa para começar a vender'}
+            </p>
+          </div>
+        </div>
+        <button 
+          onClick={() => cashSession ? setShowCloseModal(true) : setShowOpenModal(true)}
+          className={cn(
+            "px-10 py-4 rounded-2xl font-black shadow-xl transition-all hover:scale-105",
+            cashSession ? "bg-rose-600 text-white shadow-rose-600/20" : "bg-emerald-600 text-white shadow-emerald-600/20"
+          )}
+        >
+          {cashSession ? 'FECHAR CAIXA' : 'ABRIR CAIXA'}
         </button>
       </div>
 
@@ -170,7 +218,7 @@ export default function DashboardView({ stats, dashboardConfig, aiInsights, onAn
           animate={{ opacity: 1, scale: 1 }}
           className="bg-slate-900 text-white p-12 rounded-[3.5rem] shadow-2xl relative overflow-hidden"
         >
-          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 blur-[100px] rounded-full -mr-32 -mt-32" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/10 blur-[100px] rounded-full -mr-32 -mt-32 blur-3xl" />
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-8">
               <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/20">
@@ -185,6 +233,53 @@ export default function DashboardView({ stats, dashboardConfig, aiInsights, onAn
             </div>
           </div>
         </motion.div>
+      )}
+
+      {/* Modals */}
+      {showOpenModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl max-w-md w-full">
+            <h3 className="text-2xl font-black mb-6">Abrir Caixa</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Fundo de Caixa Inicial</label>
+                <input 
+                  type="number" 
+                  value={cashValue}
+                  onChange={(e) => setCashValue(e.target.value)}
+                  className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-emerald-500/20" 
+                />
+              </div>
+              <div className="flex gap-4 pt-4">
+                <button onClick={() => setShowOpenModal(false)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-white font-black rounded-2xl">CANCELAR</button>
+                <button onClick={async () => { await onOpenCash(Number(cashValue)); setShowOpenModal(false); }} className="flex-1 py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-600/20">ABRIR CAIXA</button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {showCloseModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl max-w-md w-full">
+            <h3 className="text-2xl font-black mb-6">Fechar Caixa</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Valor Final em Dinheiro</label>
+                <input 
+                  type="number" 
+                  value={cashValue}
+                  onChange={(e) => setCashValue(e.target.value)}
+                  className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-rose-500/20" 
+                />
+              </div>
+              <div className="flex gap-4 pt-4">
+                <button onClick={() => setShowCloseModal(false)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-white font-black rounded-2xl">CANCELAR</button>
+                <button onClick={async () => { await onCloseCash(cashSession.id, Number(cashValue)); setShowCloseModal(false); }} className="flex-1 py-4 bg-rose-600 text-white font-black rounded-2xl shadow-xl shadow-rose-600/20">FECHAR CAIXA</button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
       )}
     </div>
   );

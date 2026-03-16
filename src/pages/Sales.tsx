@@ -179,9 +179,21 @@ export default function Sales({ sales }: SalesProps) {
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total da Venda</p>
                     <p className="text-4xl font-black text-amber-600">R$ {Number(selectedSale.total_amount).toFixed(2)}</p>
                   </div>
-                  <button className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-8 py-4 rounded-2xl font-black flex items-center gap-2 hover:scale-105 transition-all">
-                    <Receipt size={20} /> REIMPRIMIR CUPOM
-                  </button>
+                  <div className="flex gap-4">
+                    <button 
+                      onClick={() => {
+                        const event = new CustomEvent('edit-sale', { detail: selectedSale });
+                        window.dispatchEvent(event);
+                        setSelectedSale(null);
+                      }}
+                      className="flex-1 bg-amber-600 text-white px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-amber-700 transition-all"
+                    >
+                      <Receipt size={20} /> EDITAR VENDA
+                    </button>
+                    <button className="flex-1 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:scale-105 transition-all">
+                      <Receipt size={20} /> REIMPRIMIR CUPOM
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>

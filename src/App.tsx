@@ -30,6 +30,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Inventory from './pages/Inventory';
 import Sales from './pages/Sales';
+import Expiry from './pages/Expiry';
 import AdminTenants from './pages/AdminTenants';
 import AdminUsers from './pages/AdminUsers';
 
@@ -46,9 +47,6 @@ export default function App() {
   });
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
-    return (localStorage.getItem('theme') as any) || 'system';
-  });
 
   // Data State
   const [products, setProducts] = useState<Product[]>([]);
@@ -56,12 +54,28 @@ export default function App() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [batches, setBatches] = useState<any[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [inventoryLogs, setInventoryLogs] = useState<any[]>([]);
   const [cashSession, setCashSession] = useState<CashSession | null>(null);
   const [settings, setSettings] = useState<any>({});
   const [toasts, setToasts] = useState<any[]>([]);
+
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
+    return (localStorage.getItem('theme') as any) || 'system';
+  });
+
+  // Sync theme with settings
+  useEffect(() => {
+    if (settings.theme) {
+      setTheme(settings.theme);
+    }
+    if (settings.primary_color) {
+      document.documentElement.style.setProperty('--color-amber-600', settings.primary_color);
+      document.documentElement.style.setProperty('--color-amber-700', settings.primary_color);
+    }
+  }, [settings.theme, settings.primary_color]);
 
   // AI State
   const [aiInsights, setAiInsights] = useState('');
@@ -85,6 +99,14 @@ export default function App() {
     setIsAuthReady(true);
   }, [user]);
 
+  useEffect(() => {
+    const handleEditSale = () => {
+      navigate('/pos');
+    };
+    window.addEventListener('edit-sale', handleEditSale);
+    return () => window.removeEventListener('edit-sale', handleEditSale);
+  }, [navigate]);
+
   const fetchAllData = async () => {
     try {
       const [
@@ -95,7 +117,8 @@ export default function App() {
         billsData, 
         cashSessionData,
         settingsData,
-        logsData
+        logsData,
+        batchesData
       ] = await Promise.all([
         apiFetch('/api/products'),
         apiFetch('/api/customers'),
@@ -104,7 +127,8 @@ export default function App() {
         apiFetch('/api/accounts-payable'),
         apiFetch('/api/cash-flow/current'),
         apiFetch('/api/settings'),
-        apiFetch('/api/inventory-logs')
+        apiFetch('/api/inventory-logs'),
+        apiFetch('/api/batches')
       ]);
 
       setProducts(productsData);
@@ -115,6 +139,7 @@ export default function App() {
       setCashSession(cashSessionData);
       setSettings(settingsData);
       setInventoryLogs(logsData);
+      setBatches(batchesData);
 
       if (user?.is_super_admin) {
         const [tenantsData, usersData] = await Promise.all([
@@ -124,8 +149,11 @@ export default function App() {
         setTenants(tenantsData);
         setUsers(usersData);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching data:', err);
+      if (err.status === 401) {
+        handleLogout();
+      }
     }
   };
 
@@ -184,7 +212,7 @@ export default function App() {
     }
   };
 
-  const handleCheckout = async (paymentMethod: string, cart: any[], customerId: number | null, discount: number) => {
+  const handleCheckout = async (paymentMethod: string, cart: any[], customerId: number | null, discount: number, payments?: any[]) => {
     try {
       const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discount;
       await apiFetch('/api/sales', {
@@ -194,6 +222,7 @@ export default function App() {
           total_amount: totalAmount,
           discount,
           payment_method: paymentMethod,
+          payments,
           items: cart.map(item => ({
             product_id: item.id,
             quantity: item.quantity,
@@ -207,6 +236,32 @@ export default function App() {
     } catch (err) {
       addToast("Erro ao processar venda", "error");
       throw err;
+    }
+  };
+
+  const handleOpenCashSession = async (initialValue: number) => {
+    try {
+      await apiFetch('/api/cash-flow/open', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: user?.id, initial_value: initialValue })
+      });
+      addToast("Caixa aberto com sucesso!", "success");
+      fetchAllData();
+    } catch (err) {
+      addToast("Erro ao abrir caixa", "error");
+    }
+  };
+
+  const handleCloseCashSession = async (id: number, finalValue: number) => {
+    try {
+      await apiFetch('/api/cash-flow/close', {
+        method: 'POST',
+        body: JSON.stringify({ id, final_value: finalValue })
+      });
+      addToast("Caixa fechado com sucesso!", "success");
+      fetchAllData();
+    } catch (err) {
+      addToast("Erro ao fechar caixa", "error");
     }
   };
 
@@ -231,6 +286,10 @@ export default function App() {
       add: async (data: any) => { await apiFetch('/api/accounts-payable', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); },
       pay: async (id: number) => { await apiFetch(`/api/accounts-payable/${id}/pay`, { method: 'PATCH' }); fetchAllData(); },
       delete: async (id: number) => { await apiFetch(`/api/accounts-payable/${id}`, { method: 'DELETE' }); fetchAllData(); }
+    },
+    batches: {
+      add: async (data: any) => { await apiFetch('/api/batches', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); },
+      delete: async (id: number) => { await apiFetch(`/api/batches/${id}`, { method: 'DELETE' }); fetchAllData(); }
     },
     admin: {
       tenants: {
@@ -274,13 +333,17 @@ export default function App() {
                 aiInsights={aiInsights} 
                 onAnalyze={analyzeBusiness} 
                 isAnalyzing={isAnalyzing} 
+                cashSession={cashSession}
+                onOpenCash={handleOpenCashSession}
+                onCloseCash={handleCloseCashSession}
               />
             } />
-            <Route path="/pos" element={<POS products={products} customers={customers} cashSession={cashSession} onCheckout={handleCheckout} addToast={addToast} />} />
+            <Route path="/pos" element={<POS products={products} customers={customers} cashSession={cashSession} onCheckout={handleCheckout} onOpenCash={handleOpenCashSession} addToast={addToast} apiFetch={apiFetch} fetchAllData={fetchAllData} />} />
             <Route path="/products" element={<Products products={products} suppliers={suppliers} onAddProduct={crudHandlers.products.add} onUpdateProduct={crudHandlers.products.update} onDeleteProduct={crudHandlers.products.delete} addToast={addToast} />} />
             <Route path="/customers" element={<Customers customers={customers} onAddCustomer={crudHandlers.customers.add} onUpdateCustomer={crudHandlers.customers.update} onDeleteCustomer={crudHandlers.customers.delete} addToast={addToast} />} />
             <Route path="/suppliers" element={<Suppliers suppliers={suppliers} onAddSupplier={crudHandlers.suppliers.add} onUpdateSupplier={crudHandlers.suppliers.update} onDeleteSupplier={crudHandlers.suppliers.delete} addToast={addToast} />} />
             <Route path="/financial" element={<Financial bills={bills} suppliers={suppliers} onAddBill={crudHandlers.bills.add} onPayBill={crudHandlers.bills.pay} onDeleteBill={crudHandlers.bills.delete} addToast={addToast} />} />
+            <Route path="/expiry" element={<Expiry batches={batches} products={products} onAddBatch={crudHandlers.batches.add} onDeleteBatch={crudHandlers.batches.delete} addToast={addToast} />} />
             <Route path="/reports" element={<Reports sales={sales} products={products} customers={customers} bills={bills} />} />
             <Route path="/settings" element={<Settings settings={settings} onUpdateSettings={async (data) => { await apiFetch('/api/settings', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); }} addToast={addToast} />} />
             <Route path="/inventory" element={<Inventory logs={inventoryLogs} products={products} />} />

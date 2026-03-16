@@ -26,6 +26,8 @@ interface SettingsProps {
 
 export default function Settings({ settings, onUpdateSettings, addToast }: SettingsProps) {
   const [activeTab, setActiveTab] = useState('general');
+  const [selectedTheme, setSelectedTheme] = useState(settings?.theme || 'system');
+  const [selectedColor, setSelectedColor] = useState(settings?.primary_color || '#d97706');
 
   const tabs = [
     { id: 'general', label: 'Geral', icon: Store },
@@ -40,6 +42,10 @@ export default function Settings({ settings, onUpdateSettings, addToast }: Setti
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const data = Object.fromEntries(formData.entries());
+    
+    // Add theme and color to data
+    data.theme = selectedTheme;
+    data.primary_color = selectedColor;
     
     try {
       await onUpdateSettings(data);
@@ -125,10 +131,14 @@ export default function Settings({ settings, onUpdateSettings, addToast }: Setti
                         <button
                           key={theme.id}
                           type="button"
-                          className="flex flex-col items-center gap-3 p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl border-2 border-transparent hover:border-amber-500 transition-all"
+                          onClick={() => setSelectedTheme(theme.id)}
+                          className={cn(
+                            "flex flex-col items-center gap-3 p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl border-2 transition-all",
+                            selectedTheme === theme.id ? "border-amber-500 bg-amber-50 dark:bg-amber-500/10" : "border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                          )}
                         >
-                          <theme.icon size={24} className="text-amber-600" />
-                          <span className="font-bold text-sm">{theme.label}</span>
+                          <theme.icon size={24} className={cn(selectedTheme === theme.id ? "text-amber-600" : "text-slate-400")} />
+                          <span className={cn("font-bold text-sm", selectedTheme === theme.id ? "text-amber-600" : "text-slate-500")}>{theme.label}</span>
                         </button>
                       ))}
                     </div>
@@ -140,8 +150,12 @@ export default function Settings({ settings, onUpdateSettings, addToast }: Setti
                         <button
                           key={color}
                           type="button"
+                          onClick={() => setSelectedColor(color)}
                           style={{ backgroundColor: color }}
-                          className="w-12 h-12 rounded-full border-4 border-white dark:border-slate-900 shadow-lg hover:scale-110 transition-transform"
+                          className={cn(
+                            "w-12 h-12 rounded-full border-4 shadow-lg hover:scale-110 transition-transform",
+                            selectedColor === color ? "border-slate-900 dark:border-white" : "border-white dark:border-slate-900"
+                          )}
                         />
                       ))}
                     </div>
@@ -163,7 +177,7 @@ export default function Settings({ settings, onUpdateSettings, addToast }: Setti
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Moeda Padrão</label>
-                      <select name="currency" className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20">
+                      <select name="currency" defaultValue={settings?.currency || 'BRL'} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20">
                         <option value="BRL">Real (R$)</option>
                         <option value="USD">Dólar ($)</option>
                         <option value="EUR">Euro (€)</option>
@@ -171,7 +185,7 @@ export default function Settings({ settings, onUpdateSettings, addToast }: Setti
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Fuso Horário</label>
-                      <select name="timezone" className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20">
+                      <select name="timezone" defaultValue={settings?.timezone || 'America/Sao_Paulo'} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20">
                         <option value="America/Sao_Paulo">Brasília (GMT-3)</option>
                         <option value="UTC">UTC</option>
                       </select>

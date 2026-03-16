@@ -1,23 +1,23 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, 
   Download, 
-  Calendar, 
-  Filter, 
-  ChevronRight, 
   TrendingUp, 
-  TrendingDown, 
   Package, 
   Users, 
-  Truck, 
   DollarSign,
-  PieChart,
+  ChevronRight,
+  Calendar,
+  Filter,
+  Eye,
+  X,
   BarChart,
   ArrowRight
 } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from '../utils';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface ReportsProps {
   sales: any[];
@@ -27,6 +27,7 @@ interface ReportsProps {
 }
 
 export default function Reports({ sales, products, customers, bills }: ReportsProps) {
+  const [selectedReport, setSelectedReport] = useState<any | null>(null);
   const [dateRange, setDateRange] = useState('month');
 
   const reportTypes = [
@@ -36,7 +37,8 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
       description: 'Análise detalhada de faturamento, ticket médio e produtos mais vendidos.',
       icon: DollarSign,
       color: 'bg-emerald-100 text-emerald-600',
-      stats: 'R$ ' + sales.reduce((sum, s) => sum + Number(s.total_amount), 0).toFixed(2)
+      stats: 'R$ ' + sales.reduce((sum, s) => sum + Number(s.total_amount), 0).toFixed(2),
+      data: sales
     },
     {
       id: 'inventory',
@@ -44,7 +46,8 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
       description: 'Posição atual de estoque, produtos com giro baixo e necessidade de reposição.',
       icon: Package,
       color: 'bg-amber-100 text-amber-600',
-      stats: products.length + ' itens ativos'
+      stats: products.length + ' itens ativos',
+      data: products
     },
     {
       id: 'customers',
@@ -52,7 +55,8 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
       description: 'Ranking de melhores clientes, frequência de compra e análise de fidelidade.',
       icon: Users,
       color: 'bg-indigo-100 text-indigo-600',
-      stats: customers.length + ' cadastrados'
+      stats: customers.length + ' cadastrados',
+      data: customers
     },
     {
       id: 'financial',
@@ -60,9 +64,73 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
       description: 'Fluxo de caixa, contas pagas vs pendentes e análise de despesas.',
       icon: FileText,
       color: 'bg-rose-100 text-rose-600',
-      stats: bills.length + ' lançamentos'
+      stats: bills.length + ' lançamentos',
+      data: bills
     }
   ];
+
+  const generatePDF = (report: any) => {
+    const doc = new jsPDF();
+    const date = new Date().toLocaleDateString();
+    
+    doc.setFontSize(20);
+    doc.text(report.title, 14, 22);
+    doc.setFontSize(10);
+    doc.text(`Gerado em: ${date}`, 14, 30);
+
+    if (report.id === 'sales') {
+      const tableData = sales.map(s => [
+        new Date(s.created_at).toLocaleDateString(),
+        s.customer_name || 'Consumidor',
+        s.payment_method,
+        `R$ ${Number(s.total_amount).toFixed(2)}`
+      ]);
+      autoTable(doc, {
+        startY: 40,
+        head: [['Data', 'Cliente', 'Pagamento', 'Total']],
+        body: tableData,
+      });
+    } else if (report.id === 'inventory') {
+      const tableData = products.map(p => [
+        p.name,
+        p.sku || '-',
+        p.stock_quantity,
+        `R$ ${Number(p.price).toFixed(2)}`
+      ]);
+      autoTable(doc, {
+        startY: 40,
+        head: [['Produto', 'SKU', 'Estoque', 'Preço']],
+        body: tableData,
+      });
+    } else if (report.id === 'customers') {
+      const tableData = customers.map(c => [
+        c.name,
+        c.email || '-',
+        c.phone || '-',
+        new Date(c.created_at).toLocaleDateString()
+      ]);
+      autoTable(doc, {
+        startY: 40,
+        head: [['Nome', 'Email', 'Telefone', 'Cadastro']],
+        body: tableData,
+      });
+    } else if (report.id === 'financial') {
+      const tableData = bills.map(b => [
+        b.description,
+        b.supplier_name || '-',
+        new Date(b.due_date).toLocaleDateString(),
+        `R$ ${Number(b.amount).toFixed(2)}`,
+        b.status === 'Pago' ? 'Pago' : 'Pendente'
+      ]);
+      autoTable(doc, {
+        startY: 40,
+        head: [['Descrição', 'Fornecedor', 'Vencimento', 'Valor', 'Status']],
+        body: tableData,
+      });
+    }
+
+    doc.save(`${report.id}-report-${date.replace(/\//g, '-')}.pdf`);
+  };
 
   return (
     <div className="space-y-8">
@@ -114,16 +182,141 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
             <p className="text-slate-500 font-medium mb-8 leading-relaxed">{report.description}</p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <button className="flex-1 bg-amber-600 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg shadow-amber-600/20 hover:bg-amber-700 transition-all">
+              <button 
+                onClick={() => generatePDF(report)}
+                className="flex-1 bg-amber-600 text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 shadow-lg shadow-amber-600/20 hover:bg-amber-700 transition-all"
+              >
                 <Download size={18} /> GERAR PDF
               </button>
-              <button className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-200 transition-all">
+              <button 
+                onClick={() => setSelectedReport(report)}
+                className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-200 transition-all"
+              >
                 <BarChart size={18} /> VER DETALHES
               </button>
             </div>
           </motion.div>
         ))}
       </div>
+
+      {/* Details Modal */}
+      <AnimatePresence>
+        {selectedReport && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              onClick={() => setSelectedReport(null)} 
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" 
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} 
+              animate={{ scale: 1, opacity: 1 }} 
+              exit={{ scale: 0.9, opacity: 0 }} 
+              className="relative bg-white dark:bg-slate-900 w-full max-w-5xl h-full max-h-[80vh] rounded-[3rem] shadow-2xl overflow-hidden flex flex-col"
+            >
+              <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className={cn("p-3 rounded-xl", selectedReport.color)}>
+                    <selectedReport.icon size={24} />
+                  </div>
+                  <h2 className="text-2xl font-black">{selectedReport.title}</h2>
+                </div>
+                <button onClick={() => setSelectedReport(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto p-8">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-left border-b border-slate-100 dark:border-slate-800">
+                      {selectedReport.id === 'sales' && (
+                        <>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Data</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Cliente</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Pagamento</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400 text-right">Total</th>
+                        </>
+                      )}
+                      {selectedReport.id === 'inventory' && (
+                        <>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Produto</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">SKU</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Estoque</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400 text-right">Preço</th>
+                        </>
+                      )}
+                      {selectedReport.id === 'customers' && (
+                        <>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Nome</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Email</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Telefone</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400 text-right">Cadastro</th>
+                        </>
+                      )}
+                      {selectedReport.id === 'financial' && (
+                        <>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Descrição</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Vencimento</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Valor</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400 text-right">Status</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                    {selectedReport.data.map((item: any, idx: number) => (
+                      <tr key={idx} className="group">
+                        {selectedReport.id === 'sales' && (
+                          <>
+                            <td className="py-4 font-bold text-slate-600 dark:text-slate-400">{new Date(item.created_at).toLocaleDateString()}</td>
+                            <td className="py-4 font-black text-slate-900 dark:text-white">{item.customer_name || 'Consumidor'}</td>
+                            <td className="py-4 font-bold text-slate-500 uppercase text-xs tracking-wider">{item.payment_method}</td>
+                            <td className="py-4 text-right font-black text-emerald-600">R$ {Number(item.total_amount).toFixed(2)}</td>
+                          </>
+                        )}
+                        {selectedReport.id === 'inventory' && (
+                          <>
+                            <td className="py-4 font-black text-slate-900 dark:text-white">{item.name}</td>
+                            <td className="py-4 font-bold text-slate-500">{item.sku || '-'}</td>
+                            <td className="py-4 font-bold text-slate-600">{item.stock_quantity}</td>
+                            <td className="py-4 text-right font-black text-slate-900 dark:text-white">R$ {Number(item.price).toFixed(2)}</td>
+                          </>
+                        )}
+                        {selectedReport.id === 'customers' && (
+                          <>
+                            <td className="py-4 font-black text-slate-900 dark:text-white">{item.name}</td>
+                            <td className="py-4 font-bold text-slate-500">{item.email || '-'}</td>
+                            <td className="py-4 font-bold text-slate-600">{item.phone || '-'}</td>
+                            <td className="py-4 text-right font-bold text-slate-500">{new Date(item.created_at).toLocaleDateString()}</td>
+                          </>
+                        )}
+                        {selectedReport.id === 'financial' && (
+                          <>
+                            <td className="py-4 font-black text-slate-900 dark:text-white">{item.description}</td>
+                            <td className="py-4 font-bold text-slate-500">{new Date(item.due_date).toLocaleDateString()}</td>
+                            <td className="py-4 font-black text-rose-600">R$ {Number(item.amount).toFixed(2)}</td>
+                            <td className="py-4 text-right">
+                              <span className={cn(
+                                "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
+                                item.status === 'Pago' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
+                              )}>
+                                {item.status === 'Pago' ? 'Pago' : 'Pendente'}
+                              </span>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <div className="bg-amber-600 rounded-[3rem] p-12 text-white relative overflow-hidden">
         <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">

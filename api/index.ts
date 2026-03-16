@@ -40,13 +40,14 @@ app.use("/api", async (req, res, next) => {
   
   const userId = req.headers['x-user-id'];
   if (!userId) {
+    console.warn(`Auth Middleware: Missing x-user-id header for path ${req.path}`);
     return res.status(401).json({ error: "Usuário não autenticado" });
   }
   
   const { data: user, error: userErr } = await supabase.from('app_users').select('tenant_id, is_super_admin').eq('id', userId).single();
   
   if (userErr || !user) {
-    console.error("Auth Middleware Error:", userErr || "User not found");
+    console.error(`Auth Middleware Error for userId ${userId}:`, userErr || "User not found");
     return res.status(401).json({ error: "Usuário não encontrado" });
   }
   
@@ -62,6 +63,27 @@ const getTenantId = (req: express.Request) => {
 };
 
 // --- API Routes ---
+
+// Bootstrap Super Admin
+const bootstrapAdmin = async () => {
+  if (!supabase) return;
+  try {
+    const { data: existing } = await supabase.from("app_users").select("id").eq("username", "felipe").maybeSingle();
+    if (!existing) {
+      console.log("Bootstrapping super admin 'felipe'...");
+      await supabase.from("app_users").insert([{
+        username: "felipe",
+        password: "260892",
+        name: "Felipe Super Admin",
+        role: "admin",
+        is_super_admin: true
+      }]);
+    }
+  } catch (err) {
+    console.error("Bootstrap error:", err);
+  }
+};
+bootstrapAdmin();
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
@@ -79,7 +101,7 @@ app.post("/api/login", async (req, res) => {
 
     if (error) throw error;
     if (user) {
-      console.log(`Login successful for user: ${username}`);
+      console.log(`Login successful for user: ${username} (ID: ${user.id})`);
       res.json(user);
     } else {
       console.warn(`Login failed for user: ${username}`);
@@ -111,19 +133,22 @@ app.post("/api/tenants", async (req, res) => {
 });
 
 app.patch("/api/tenants/:id/status", async (req, res) => {
+  if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
   const { status } = req.body;
   await supabase.from("tenants").update({ status }).eq("id", req.params.id);
   res.json({ success: true });
 });
 
 app.put("/api/tenants/:id", async (req, res) => {
-  const { name, slug } = req.body;
-  const { error } = await supabase.from("tenants").update({ name, slug }).eq("id", req.params.id);
+  if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
+  const { name, slug, status } = req.body;
+  const { error } = await supabase.from("tenants").update({ name, slug, status }).eq("id", req.params.id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ success: true });
 });
 
 app.delete("/api/tenants/:id", async (req, res) => {
+  if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
   const { error } = await supabase.from("tenants").delete().eq("id", req.params.id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ success: true });
@@ -183,17 +208,64 @@ app.post("/api/cash-flow/close", async (req, res) => {
 // Settings
 app.get("/api/settings", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data: settings } = await supabase.from("settings").select("*").eq("tenant_id", tenant_id);
-  const settingsObj = settings?.reduce((acc: any, curr: any) => { acc[curr.key] = curr.value; return acc; }, {}) || {};
+  const userId = req.headers['x-user-id'];
+  
+  // Get tenant settings
+  const { data: tenantSettings } = await supabase.from("settings").select("*").eq("tenant_id", tenant_id).is("user_id", null);
+  
+  // Get user specific settings (preferences)
+  const { data: userSettings } = await supabase.from("settings").select("*").eq("tenant_id", tenant_id).eq("user_id", userId);
+  
+  const settingsObj = [...(tenantSettings || []), ...(userSettings || [])].reduce((acc: any, curr: any) => { 
+    acc[curr.key] = curr.value; 
+    return acc; 
+  }, {}) || {};
+  
   res.json(settingsObj);
 });
 
 app.post("/api/settings", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { key, value } = req.body;
-  const { error } = await supabase.from("settings").upsert({ tenant_id, key, value: String(value) });
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ success: true });
+  const userId = req.headers['x-user-id'];
+  const settings = req.body;
+  
+  try {
+    for (const [key, value] of Object.entries(settings)) {
+      const userSpecificKeys = ['theme', 'primary_color', 'sidebar_collapsed'];
+      const isUserSpecific = userSpecificKeys.includes(key);
+      
+      const query = supabase.from("settings")
+        .select("id")
+        .eq("tenant_id", tenant_id)
+        .eq("key", key);
+      
+      if (isUserSpecific) {
+        query.eq("user_id", userId);
+      } else {
+        query.is("user_id", null);
+      }
+      
+      const { data: existing } = await query.maybeSingle();
+      
+      if (existing) {
+        await supabase.from("settings")
+          .update({ value: String(value) })
+          .eq("id", existing.id);
+      } else {
+        await supabase.from("settings")
+          .insert([{
+            tenant_id,
+            user_id: isUserSpecific ? userId : null,
+            key,
+            value: String(value)
+          }]);
+      }
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("Settings Update Error:", err);
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Products
@@ -263,7 +335,8 @@ app.delete("/api/products/:id", async (req, res) => {
 // Batches
 app.get("/api/batches", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data } = await supabase.from("batches").select("*, products(name)").eq("tenant_id", tenant_id).order("expiry_date", { ascending: true });
+  const { data, error } = await supabase.from("batches").select("*, products(name)").eq("tenant_id", tenant_id).order("expiry_date", { ascending: true });
+  if (error) return res.status(400).json({ error: error.message });
   const batches = data?.map((b: any) => ({ ...b, product_name: b.products?.name })) || [];
   res.json(batches);
 });
@@ -271,24 +344,44 @@ app.get("/api/batches", async (req, res) => {
 app.post("/api/batches", async (req, res) => {
   const tenant_id = getTenantId(req);
   const { product_id, quantity, expiry_date } = req.body;
-  const { data: batch, error: batchErr } = await supabase.from("batches").insert([{ tenant_id, product_id, quantity, expiry_date }]).select().single();
-  if (batchErr) return res.status(400).json({ error: batchErr.message });
-  const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", product_id).eq("tenant_id", tenant_id).single();
-  const newStock = (product?.stock_quantity || 0) + Number(quantity);
-  await supabase.from("products").update({ stock_quantity: newStock }).eq("id", product_id).eq("tenant_id", tenant_id);
-  res.json({ id: batch.id });
+  
+  try {
+    const { data: batch, error: batchErr } = await supabase.from("batches").insert([{ 
+      tenant_id, 
+      product_id: Number(product_id), 
+      quantity: Number(quantity), 
+      expiry_date 
+    }]).select().single();
+    
+    if (batchErr) throw batchErr;
+    
+    // Update product stock
+    const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", product_id).eq("tenant_id", tenant_id).single();
+    const newStock = (product?.stock_quantity || 0) + Number(quantity);
+    await supabase.from("products").update({ stock_quantity: newStock }).eq("id", product_id).eq("tenant_id", tenant_id);
+    
+    res.json({ id: batch.id });
+  } catch (err: any) {
+    console.error("Error creating batch:", err);
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.delete("/api/batches/:id", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data: batch } = await supabase.from("batches").select("*").eq("id", req.params.id).eq("tenant_id", tenant_id).single();
-  if (batch) {
-    const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", batch.product_id).eq("tenant_id", tenant_id).single();
-    const newStock = (product?.stock_quantity || 0) - Number(batch.quantity);
-    await supabase.from("products").update({ stock_quantity: newStock }).eq("id", batch.product_id).eq("tenant_id", tenant_id);
-    await supabase.from("batches").delete().eq("id", req.params.id).eq("tenant_id", tenant_id);
+  try {
+    const { data: batch } = await supabase.from("batches").select("*").eq("id", req.params.id).eq("tenant_id", tenant_id).single();
+    if (batch) {
+      const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", batch.product_id).eq("tenant_id", tenant_id).single();
+      const newStock = Math.max(0, (product?.stock_quantity || 0) - Number(batch.quantity));
+      await supabase.from("products").update({ stock_quantity: newStock }).eq("id", batch.product_id).eq("tenant_id", tenant_id);
+      await supabase.from("batches").delete().eq("id", req.params.id).eq("tenant_id", tenant_id);
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("Error deleting batch:", err);
+    res.status(400).json({ error: err.message });
   }
-  res.json({ success: true });
 });
 
 // Suppliers
@@ -437,34 +530,95 @@ app.get("/api/sales/:id", async (req, res) => {
 
 app.post("/api/sales", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { customer_id, items, total_amount, discount, payment_method } = req.body;
+  const { customer_id, items, total_amount, discount, payment_method, payments } = req.body;
+  
+  // Use payments if provided, otherwise fallback to payment_method
+  const finalPaymentMethod = payments ? JSON.stringify(payments) : payment_method;
+
   const { data: sale, error: saleErr } = await supabase.from("sales").insert([{ 
     tenant_id, 
     customer_id: customer_id ? Number(customer_id) : null, 
     total_amount: Number(total_amount), 
     discount: Number(discount || 0), 
-    payment_method 
+    payment_method: finalPaymentMethod
   }]).select().single();
+  
   if (saleErr) return res.status(400).json({ error: saleErr.message });
+  
   for (const item of items) {
     await supabase.from("sale_items").insert([{ 
       tenant_id, 
       sale_id: sale.id, 
-      product_id: Number(item.product_id), 
+      product_id: Number(item.product_id || item.id), 
       quantity: Number(item.quantity), 
-      unit_price: Number(item.unit_price), 
+      unit_price: Number(item.unit_price || item.price), 
       discount: Number(item.discount || 0) 
     }]);
-    const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", item.product_id).eq("tenant_id", tenant_id).single();
+    const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", item.product_id || item.id).eq("tenant_id", tenant_id).single();
     const newStock = (product?.stock_quantity || 0) - Number(item.quantity);
-    await supabase.from("products").update({ stock_quantity: newStock }).eq("id", item.product_id).eq("tenant_id", tenant_id);
+    await supabase.from("products").update({ stock_quantity: newStock }).eq("id", item.product_id || item.id).eq("tenant_id", tenant_id);
   }
+  
   if (customer_id) {
     const { data: customer } = await supabase.from("customers").select("points").eq("id", customer_id).eq("tenant_id", tenant_id).single();
     const newPoints = (customer?.points || 0) + Math.floor(Number(total_amount) / 10);
     await supabase.from("customers").update({ points: newPoints }).eq("id", customer_id).eq("tenant_id", tenant_id);
   }
+  
   res.json({ success: true, saleId: sale.id });
+});
+
+app.put("/api/sales/:id", async (req, res) => {
+  const tenant_id = getTenantId(req);
+  const { customer_id, items, total_amount, discount, payment_method, payments } = req.body;
+  const saleId = req.params.id;
+
+  try {
+    // 1. Get old items to revert stock
+    const { data: oldItems } = await supabase.from("sale_items").select("*").eq("sale_id", saleId).eq("tenant_id", tenant_id);
+    
+    if (oldItems) {
+      for (const item of oldItems) {
+        const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", item.product_id).eq("tenant_id", tenant_id).single();
+        const revertedStock = (product?.stock_quantity || 0) + Number(item.quantity);
+        await supabase.from("products").update({ stock_quantity: revertedStock }).eq("id", item.product_id).eq("tenant_id", tenant_id);
+      }
+    }
+
+    // 2. Delete old items
+    await supabase.from("sale_items").delete().eq("sale_id", saleId).eq("tenant_id", tenant_id);
+
+    // 3. Update sale record
+    const finalPaymentMethod = payments ? JSON.stringify(payments) : payment_method;
+    const { error: saleErr } = await supabase.from("sales").update({
+      customer_id: customer_id ? Number(customer_id) : null,
+      total_amount: Number(total_amount),
+      discount: Number(discount || 0),
+      payment_method: finalPaymentMethod
+    }).eq("id", saleId).eq("tenant_id", tenant_id);
+
+    if (saleErr) throw saleErr;
+
+    // 4. Insert new items and update stock
+    for (const item of items) {
+      await supabase.from("sale_items").insert([{ 
+        tenant_id, 
+        sale_id: Number(saleId), 
+        product_id: Number(item.product_id || item.id), 
+        quantity: Number(item.quantity), 
+        unit_price: Number(item.unit_price || item.price), 
+        discount: Number(item.discount || 0) 
+      }]);
+      const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", item.product_id || item.id).eq("tenant_id", tenant_id).single();
+      const newStock = (product?.stock_quantity || 0) - Number(item.quantity);
+      await supabase.from("products").update({ stock_quantity: newStock }).eq("id", item.product_id || item.id).eq("tenant_id", tenant_id);
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("Error updating sale:", err);
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.delete("/api/sales/:id", async (req, res) => {
@@ -490,19 +644,24 @@ app.delete("/api/sales/:id", async (req, res) => {
 // Stats
 app.get("/api/stats", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data: allSales } = await supabase.from("sales").select("total_amount, created_at").eq("tenant_id", tenant_id);
-  const totalRevenue = allSales?.reduce((sum, s) => sum + Number(s.total_amount), 0) || 0;
-  const today = new Date().toISOString().split('T')[0];
-  const todayRevenue = allSales?.filter(s => s.created_at.startsWith(today)).reduce((sum, s) => sum + Number(s.total_amount), 0) || 0;
-  const { count: lowStockCount } = await supabase.from("products").select("*", { count: 'exact', head: true }).eq("tenant_id", tenant_id).lte("stock_quantity", "min_stock_level");
-  const { data: saleItems } = await supabase.from("sale_items").select("quantity, products(name)").eq("tenant_id", tenant_id);
-  const productSales: any = {};
-  saleItems?.forEach((item: any) => {
-    const name = item.products?.name;
-    if (name) productSales[name] = (productSales[name] || 0) + item.quantity;
-  });
-  const topProducts = Object.entries(productSales).map(([name, total_sold]) => ({ name, total_sold })).sort((a: any, b: any) => b.total_sold - a.total_sold).slice(0, 5);
-  res.json({ totalRevenue, todayRevenue, lowStockCount: lowStockCount || 0, topProducts });
+  try {
+    const { data: allSales } = await supabase.from("sales").select("total_amount, created_at").eq("tenant_id", tenant_id);
+    const totalRevenue = allSales?.reduce((sum, s) => sum + Number(s.total_amount), 0) || 0;
+    const today = new Date().toISOString().split('T')[0];
+    const todayRevenue = allSales?.filter(s => s.created_at.startsWith(today)).reduce((sum, s) => sum + Number(s.total_amount), 0) || 0;
+    const { count: lowStockCount } = await supabase.from("products").select("*", { count: 'exact', head: true }).eq("tenant_id", tenant_id).lte("stock_quantity", "min_stock_level");
+    const { data: saleItems } = await supabase.from("sale_items").select("quantity, products(name)").eq("tenant_id", tenant_id);
+    const productSales: any = {};
+    saleItems?.forEach((item: any) => {
+      const name = item.products?.name;
+      if (name) productSales[name] = (productSales[name] || 0) + item.quantity;
+    });
+    const topProducts = Object.entries(productSales).map(([name, total_sold]) => ({ name, total_sold })).sort((a: any, b: any) => b.total_sold - a.total_sold).slice(0, 5);
+    res.json({ totalRevenue, todayRevenue, lowStockCount: lowStockCount || 0, topProducts });
+  } catch (err: any) {
+    console.error("Stats Error:", err);
+    res.status(500).json({ error: "Erro ao carregar estatísticas" });
+  }
 });
 
 export default app;

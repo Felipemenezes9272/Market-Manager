@@ -26,23 +26,50 @@ interface POSProps {
   products: Product[];
   customers: Customer[];
   cashSession: CashSession | null;
-  onCheckout: (paymentMethod: string, cart: any[], customerId: number | null, discount: number) => Promise<void>;
+  onCheckout: (paymentMethod: string, cart: any[], customerId: number | null, discount: number, payments?: any[]) => Promise<void>;
+  onOpenCash: (initialValue: number) => Promise<void>;
   addToast: (msg: string, type?: any) => void;
+  apiFetch: (url: string, options?: any) => Promise<any>;
+  fetchAllData: () => Promise<void>;
 }
 
-export default function POS({ products, customers, cashSession, onCheckout, addToast }: POSProps) {
+export default function POS({ products, customers, cashSession, onCheckout, onOpenCash, addToast, apiFetch, fetchAllData }: POSProps) {
   const [cart, setCart] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [discount, setDiscount] = useState(0);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [showOpenCashModal, setShowOpenCashModal] = useState(false);
+  const [initialCashValue, setInitialCashValue] = useState('0');
+  const [payments, setPayments] = useState<{ method: string, amount: number }[]>([]);
+  const [editingSale, setEditingSale] = useState<any>(null);
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(search.toLowerCase()) || 
     p.barcode?.includes(search)
   );
+
+  // Load editing sale if provided (will be handled by parent)
+  useEffect(() => {
+    const handleEditSale = (e: any) => {
+      const sale = e.detail;
+      setEditingSale(sale);
+      setCart(sale.items.map((i: any) => ({
+        id: i.product_id,
+        name: i.product_name,
+        price: i.unit_price,
+        quantity: i.quantity,
+        image_url: i.image_url
+      })));
+      setSelectedCustomer(customers.find(c => c.id === sale.customer_id) || null);
+      setDiscount(sale.discount || 0);
+      setIsCheckoutOpen(true);
+    };
+    window.addEventListener('edit-sale', handleEditSale);
+    return () => window.removeEventListener('edit-sale', handleEditSale);
+  }, [customers]);
 
   const addToCart = (product: Product) => {
     if (product.stock_quantity <= 0) {
@@ -77,16 +104,48 @@ export default function POS({ products, customers, cashSession, onCheckout, addT
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const finalTotal = Math.max(0, subtotal - discount);
 
-  const handleCheckout = async (paymentMethod: string) => {
+  const handleCheckout = async () => {
+    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+    if (Math.abs(totalPaid - finalTotal) > 0.01) {
+      addToast(`O valor total pago (R$ ${totalPaid.toFixed(2)}) deve ser igual ao total da venda (R$ ${finalTotal.toFixed(2)})`, "warning");
+      return;
+    }
+
     try {
-      await onCheckout(paymentMethod, cart, selectedCustomer?.id || null, discount);
+      if (editingSale) {
+        await apiFetch(`/api/sales/${editingSale.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            customer_id: selectedCustomer?.id || null,
+            items: cart,
+            total_amount: finalTotal,
+            discount,
+            payments
+          })
+        });
+        addToast("Venda atualizada com sucesso!", "success");
+      } else {
+        await onCheckout(payments.length === 1 ? payments[0].method : "Múltiplos", cart, selectedCustomer?.id || null, discount, payments);
+      }
       setCart([]);
       setSelectedCustomer(null);
       setDiscount(0);
+      setPayments([]);
+      setEditingSale(null);
       setIsCheckoutOpen(false);
     } catch (err) {
       // Error handled by parent
     }
+  };
+
+  const addPayment = (method: string) => {
+    const remaining = finalTotal - payments.reduce((sum, p) => sum + p.amount, 0);
+    if (remaining <= 0) return;
+    setPayments([...payments, { method, amount: remaining }]);
+  };
+
+  const removePayment = (index: number) => {
+    setPayments(payments.filter((_, i) => i !== index));
   };
 
   useEffect(() => {
@@ -124,9 +183,48 @@ export default function POS({ products, customers, cashSession, onCheckout, addT
           <h2 className="text-3xl font-black text-slate-900">Caixa Fechado</h2>
           <p className="text-slate-500 max-w-md mx-auto mt-2">Você precisa abrir o caixa para realizar vendas. Vá para o Dashboard ou clique no botão abaixo.</p>
         </div>
-        <button className="px-8 py-4 bg-amber-600 text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all">
+        <button 
+          onClick={() => setShowOpenCashModal(true)}
+          className="px-8 py-4 bg-amber-600 text-white font-black rounded-2xl shadow-xl hover:scale-105 transition-all"
+        >
           ABRIR CAIXA AGORA
         </button>
+
+        <AnimatePresence>
+          {showOpenCashModal && (
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowOpenCashModal(false)} className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" />
+              <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden p-10">
+                <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-6">Abrir Caixa</h3>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Valor Inicial em Fundo</label>
+                    <input 
+                      type="number" 
+                      value={initialCashValue}
+                      onChange={(e) => setInitialCashValue(e.target.value)}
+                      className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20" 
+                    />
+                  </div>
+                  <div className="flex gap-4 pt-4">
+                    <button onClick={() => setShowOpenCashModal(false)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-white font-black rounded-2xl hover:bg-slate-200 transition-all">
+                      CANCELAR
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        await onOpenCash(Number(initialCashValue));
+                        setShowOpenCashModal(false);
+                      }}
+                      className="flex-1 py-4 bg-amber-600 text-white font-black rounded-2xl shadow-xl shadow-amber-600/20 hover:bg-amber-700 transition-all"
+                    >
+                      ABRIR CAIXA
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -308,6 +406,40 @@ export default function POS({ products, customers, cashSession, onCheckout, addT
                   <div className="text-5xl font-black text-slate-900 dark:text-white mt-2">R$ {finalTotal.toFixed(2)}</div>
                 </div>
 
+                {payments.length > 0 && (
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pagamentos Adicionados</span>
+                    <div className="space-y-2">
+                      {payments.map((p, i) => (
+                        <div key={i} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm">{p.method}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <input 
+                              type="number" 
+                              value={p.amount}
+                              onChange={(e) => {
+                                const newPayments = [...payments];
+                                newPayments[i].amount = Number(e.target.value);
+                                setPayments(newPayments);
+                              }}
+                              className="w-24 bg-transparent text-right font-black text-amber-600 outline-none"
+                            />
+                            <button onClick={() => removePayment(i)} className="text-rose-500 hover:text-rose-600"><X size={16} /></button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <span className="text-xs font-bold text-slate-400 uppercase">Restante</span>
+                      <span className={cn("font-black", (finalTotal - payments.reduce((s, p) => s + p.amount, 0)) > 0 ? "text-rose-500" : "text-emerald-500")}>
+                        R$ {(finalTotal - payments.reduce((s, p) => s + p.amount, 0)).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   {[
                     { id: 'Dinheiro', icon: Banknote, label: 'Dinheiro' },
@@ -317,7 +449,7 @@ export default function POS({ products, customers, cashSession, onCheckout, addT
                   ].map(method => (
                     <button 
                       key={method.id}
-                      onClick={() => handleCheckout(method.id)}
+                      onClick={() => addPayment(method.id)}
                       className="flex flex-col items-center gap-3 p-6 rounded-3xl border-2 border-slate-100 dark:border-slate-800 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all group"
                     >
                       <method.icon size={32} className="text-slate-400 group-hover:text-amber-600 transition-colors" />
@@ -326,12 +458,25 @@ export default function POS({ products, customers, cashSession, onCheckout, addT
                   ))}
                 </div>
 
-                <button 
-                  onClick={() => setIsCheckoutOpen(false)}
-                  className="w-full py-4 text-slate-400 font-black hover:text-slate-600 transition-colors uppercase text-xs tracking-widest"
-                >
-                  Cancelar Operação
-                </button>
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={handleCheckout}
+                    disabled={Math.abs(payments.reduce((s, p) => s + p.amount, 0) - finalTotal) > 0.01}
+                    className="w-full py-5 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:shadow-none uppercase tracking-widest text-sm"
+                  >
+                    {editingSale ? 'ATUALIZAR VENDA' : 'CONFIRMAR PAGAMENTO'}
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIsCheckoutOpen(false);
+                      setEditingSale(null);
+                      setPayments([]);
+                    }}
+                    className="w-full py-4 text-slate-400 font-black hover:text-slate-600 transition-colors uppercase text-xs tracking-widest"
+                  >
+                    Cancelar Operação
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
