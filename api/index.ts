@@ -26,6 +26,12 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
+// Request logger
+app.use("/api", (req, res, next) => {
+  console.log(`${req.method} ${req.path}`);
+  next();
+});
+
 // Securely resolve tenant_id
 app.use("/api", async (req, res, next) => {
   if (req.path === "/login" || req.path === "/health") {
@@ -40,6 +46,7 @@ app.use("/api", async (req, res, next) => {
   const { data: user, error: userErr } = await supabase.from('app_users').select('tenant_id, is_super_admin').eq('id', userId).single();
   
   if (userErr || !user) {
+    console.error("Auth Middleware Error:", userErr || "User not found");
     return res.status(401).json({ error: "Usuário não encontrado" });
   }
   
@@ -72,11 +79,14 @@ app.post("/api/login", async (req, res) => {
 
     if (error) throw error;
     if (user) {
+      console.log(`Login successful for user: ${username}`);
       res.json(user);
     } else {
+      console.warn(`Login failed for user: ${username}`);
       res.status(401).json({ error: "Usuário ou senha inválidos" });
     }
   } catch (err: any) {
+    console.error("Login Route Error:", err);
     res.status(500).json({ error: "Erro interno no servidor", details: err.message });
   }
 });
