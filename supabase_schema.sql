@@ -41,6 +41,16 @@ CREATE TABLE IF NOT EXISTS app_users (
     UNIQUE(tenant_id, username)
 );
 
+-- Garante que, se for super admin, o username seja sempre 'felipe'
+ALTER TABLE app_users
+  ADD CONSTRAINT app_users_super_admin_username_check
+  CHECK (NOT is_super_admin OR username = 'felipe');
+
+-- Garante que exista no máximo UM super admin em toda a base
+CREATE UNIQUE INDEX IF NOT EXISTS app_users_single_super_admin_idx
+  ON app_users (is_super_admin)
+  WHERE is_super_admin = TRUE;
+
 -- 2. Suppliers Table
 CREATE TABLE IF NOT EXISTS suppliers (
     id SERIAL PRIMARY KEY,
