@@ -101,8 +101,8 @@ export default function App() {
         apiFetch('/api/customers'),
         apiFetch('/api/suppliers'),
         apiFetch('/api/sales'),
-        apiFetch('/api/bills'),
-        apiFetch('/api/cash-session'),
+        apiFetch('/api/accounts-payable'),
+        apiFetch('/api/cash-flow/current'),
         apiFetch('/api/settings'),
         apiFetch('/api/inventory-logs')
       ]);
@@ -118,7 +118,7 @@ export default function App() {
 
       if (user?.is_super_admin) {
         const [tenantsData, usersData] = await Promise.all([
-          apiFetch('/api/admin/tenants'),
+          apiFetch('/api/tenants'),
           apiFetch('/api/admin/users')
         ]);
         setTenants(tenantsData);
@@ -228,15 +228,15 @@ export default function App() {
       delete: async (id: number) => { await apiFetch(`/api/suppliers/${id}`, { method: 'DELETE' }); fetchAllData(); }
     },
     bills: {
-      add: async (data: any) => { await apiFetch('/api/bills', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); },
-      pay: async (id: number) => { await apiFetch(`/api/bills/${id}/pay`, { method: 'POST' }); fetchAllData(); },
-      delete: async (id: number) => { await apiFetch(`/api/bills/${id}`, { method: 'DELETE' }); fetchAllData(); }
+      add: async (data: any) => { await apiFetch('/api/accounts-payable', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); },
+      pay: async (id: number) => { await apiFetch(`/api/accounts-payable/${id}/pay`, { method: 'PATCH' }); fetchAllData(); },
+      delete: async (id: number) => { await apiFetch(`/api/accounts-payable/${id}`, { method: 'DELETE' }); fetchAllData(); }
     },
     admin: {
       tenants: {
-        add: async (data: any) => { await apiFetch('/api/admin/tenants', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); },
-        update: async (id: number, data: any) => { await apiFetch(`/api/admin/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }); fetchAllData(); },
-        delete: async (id: number) => { await apiFetch(`/api/admin/tenants/${id}`, { method: 'DELETE' }); fetchAllData(); }
+        add: async (data: any) => { await apiFetch('/api/tenants', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); },
+        update: async (id: number, data: any) => { await apiFetch(`/api/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }); fetchAllData(); },
+        delete: async (id: number) => { await apiFetch(`/api/tenants/${id}`, { method: 'DELETE' }); fetchAllData(); }
       },
       users: {
         add: async (data: any) => { await apiFetch('/api/admin/users', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); },
