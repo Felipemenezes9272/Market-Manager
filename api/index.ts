@@ -207,16 +207,49 @@ app.get("/api/products", async (req, res) => {
 app.post("/api/products", async (req, res) => {
   const tenant_id = getTenantId(req);
   const { name, barcode, category, price, cost_price, stock_quantity, min_stock_level, supplier_id, image_url } = req.body;
-  const { data, error } = await supabase.from("products").insert([{ tenant_id, name, barcode, category, price, cost_price, stock_quantity, min_stock_level, supplier_id, image_url }]).select().single();
-  if (error) return res.status(400).json({ error: error.message });
+  
+  const productData = {
+    tenant_id,
+    name,
+    barcode,
+    category,
+    price: Number(price),
+    cost_price: cost_price ? Number(cost_price) : null,
+    stock_quantity: Number(stock_quantity || 0),
+    min_stock_level: Number(min_stock_level || 0),
+    supplier_id: supplier_id ? Number(supplier_id) : null,
+    image_url
+  };
+
+  const { data, error } = await supabase.from("products").insert([productData]).select().single();
+  if (error) {
+    console.error("Error creating product:", error);
+    return res.status(400).json({ error: error.message });
+  }
   res.json({ id: data.id });
 });
 
 app.put("/api/products/:id", async (req, res) => {
   const tenant_id = getTenantId(req);
   const { name, barcode, category, price, cost_price, stock_quantity, min_stock_level, supplier_id, image_url } = req.body;
-  const { error } = await supabase.from("products").update({ name, barcode, category, price, cost_price, stock_quantity, min_stock_level, supplier_id, image_url }).eq("id", req.params.id).eq("tenant_id", tenant_id);
-  if (error) return res.status(400).json({ error: error.message });
+  
+  const productData = {
+    name,
+    barcode,
+    category,
+    price: Number(price),
+    cost_price: cost_price ? Number(cost_price) : null,
+    stock_quantity: Number(stock_quantity || 0),
+    min_stock_level: Number(min_stock_level || 0),
+    supplier_id: supplier_id ? Number(supplier_id) : null,
+    image_url
+  };
+
+  const { error } = await supabase.from("products").update(productData).eq("id", req.params.id).eq("tenant_id", tenant_id);
+  if (error) {
+    console.error("Error updating product:", error);
+    return res.status(400).json({ error: error.message });
+  }
   res.json({ success: true });
 });
 
@@ -299,7 +332,15 @@ app.get("/api/accounts-payable", async (req, res) => {
 app.post("/api/accounts-payable", async (req, res) => {
   const tenant_id = getTenantId(req);
   const { description, amount, due_date, category, supplier_id, is_recurring } = req.body;
-  const { data, error } = await supabase.from("accounts_payable").insert([{ tenant_id, description, amount, due_date, category, supplier_id, is_recurring: !!is_recurring }]).select().single();
+  const { data, error } = await supabase.from("accounts_payable").insert([{ 
+    tenant_id, 
+    description, 
+    amount: Number(amount), 
+    due_date, 
+    category, 
+    supplier_id: supplier_id ? Number(supplier_id) : null, 
+    is_recurring: !!is_recurring 
+  }]).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json({ id: data.id });
 });
@@ -363,7 +404,13 @@ app.get("/api/inventory-logs", async (req, res) => {
 app.post("/api/inventory-logs", async (req, res) => {
   const tenant_id = getTenantId(req);
   const { product_id, user_id, change_amount, reason } = req.body;
-  const { data, error } = await supabase.from("inventory_logs").insert([{ tenant_id, product_id, user_id, change_amount, reason }]).select().single();
+  const { data, error } = await supabase.from("inventory_logs").insert([{ 
+    tenant_id, 
+    product_id: Number(product_id), 
+    user_id: Number(user_id), 
+    change_amount: Number(change_amount), 
+    reason 
+  }]).select().single();
   if (error) return res.status(400).json({ error: error.message });
   const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", product_id).eq("tenant_id", tenant_id).single();
   const newStock = (product?.stock_quantity || 0) + Number(change_amount);
@@ -391,17 +438,30 @@ app.get("/api/sales/:id", async (req, res) => {
 app.post("/api/sales", async (req, res) => {
   const tenant_id = getTenantId(req);
   const { customer_id, items, total_amount, discount, payment_method } = req.body;
-  const { data: sale, error: saleErr } = await supabase.from("sales").insert([{ tenant_id, customer_id, total_amount, discount: discount || 0, payment_method }]).select().single();
+  const { data: sale, error: saleErr } = await supabase.from("sales").insert([{ 
+    tenant_id, 
+    customer_id: customer_id ? Number(customer_id) : null, 
+    total_amount: Number(total_amount), 
+    discount: Number(discount || 0), 
+    payment_method 
+  }]).select().single();
   if (saleErr) return res.status(400).json({ error: saleErr.message });
   for (const item of items) {
-    await supabase.from("sale_items").insert([{ tenant_id, sale_id: sale.id, product_id: item.product_id, quantity: item.quantity, unit_price: item.unit_price, discount: item.discount || 0 }]);
+    await supabase.from("sale_items").insert([{ 
+      tenant_id, 
+      sale_id: sale.id, 
+      product_id: Number(item.product_id), 
+      quantity: Number(item.quantity), 
+      unit_price: Number(item.unit_price), 
+      discount: Number(item.discount || 0) 
+    }]);
     const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", item.product_id).eq("tenant_id", tenant_id).single();
     const newStock = (product?.stock_quantity || 0) - Number(item.quantity);
     await supabase.from("products").update({ stock_quantity: newStock }).eq("id", item.product_id).eq("tenant_id", tenant_id);
   }
   if (customer_id) {
     const { data: customer } = await supabase.from("customers").select("points").eq("id", customer_id).eq("tenant_id", tenant_id).single();
-    const newPoints = (customer?.points || 0) + Math.floor(total_amount / 10);
+    const newPoints = (customer?.points || 0) + Math.floor(Number(total_amount) / 10);
     await supabase.from("customers").update({ points: newPoints }).eq("id", customer_id).eq("tenant_id", tenant_id);
   }
   res.json({ success: true, saleId: sale.id });
