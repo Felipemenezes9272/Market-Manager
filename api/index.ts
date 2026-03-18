@@ -39,8 +39,8 @@ app.use("/api", async (req, res, next) => {
   }
   
   const userId = req.headers['x-user-id'];
-  if (!userId) {
-    console.warn(`Auth Middleware: Missing x-user-id header for path ${req.path}`);
+  if (!userId || userId === 'null' || userId === 'undefined') {
+    console.warn(`Auth Middleware: Invalid x-user-id header (${userId}) for path ${req.path}`);
     return res.status(401).json({ error: "Usuário não autenticado" });
   }
   
@@ -59,7 +59,12 @@ app.use("/api", async (req, res, next) => {
 
 // Helper to get tenant_id from request
 const getTenantId = (req: express.Request) => {
-  return (req as any).tenant_id || null;
+  const tid = (req as any).tenant_id;
+  return (tid === undefined || tid === null || tid === 'null') ? null : tid;
+};
+
+const isSuperAdmin = (req: express.Request) => {
+  return (req as any).is_super_admin === true;
 };
 
 // --- API Routes ---
@@ -216,7 +221,7 @@ app.delete("/api/admin/users/:id", async (req, res) => {
 // Cash Flow
 app.get("/api/cash-flow/current", async (req, res) => {
   const tenant_id = getTenantId(req);
-  if (!tenant_id) return res.status(400).json({ error: "Tenant ID missing" });
+  if (!tenant_id) return res.json(null);
   const { data } = await supabase.from("cash_flow").select("*").eq("tenant_id", tenant_id).eq("status", "open").order("opened_at", { ascending: false }).limit(1).maybeSingle();
   res.json(data || null);
 });
@@ -247,11 +252,23 @@ app.get("/api/settings", async (req, res) => {
   const tenant_id = getTenantId(req);
   const userId = req.headers['x-user-id'];
   
+  if (!tenant_id && !isSuperAdmin(req)) {
+    return res.json({});
+  }
+
+  let tenantQuery = supabase.from("settings").select("*").is("user_id", null);
+  let userQuery = supabase.from("settings").select("*").eq("user_id", userId);
+
+  if (tenant_id) {
+    tenantQuery = tenantQuery.eq("tenant_id", tenant_id);
+    userQuery = userQuery.eq("tenant_id", tenant_id);
+  }
+
   // Get tenant settings
-  const { data: tenantSettings } = await supabase.from("settings").select("*").eq("tenant_id", tenant_id).is("user_id", null);
+  const { data: tenantSettings } = await tenantQuery;
   
   // Get user specific settings (preferences)
-  const { data: userSettings } = await supabase.from("settings").select("*").eq("tenant_id", tenant_id).eq("user_id", userId);
+  const { data: userSettings } = await userQuery;
   
   const settingsObj = [...(tenantSettings || []), ...(userSettings || [])].reduce((acc: any, curr: any) => { 
     acc[curr.key] = curr.value; 
@@ -308,7 +325,16 @@ app.post("/api/settings", async (req, res) => {
 // Products
 app.get("/api/products", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data } = await supabase.from("products").select("*, suppliers(name)").eq("tenant_id", tenant_id).order("name");
+  let query = supabase.from("products").select("*, suppliers(name)");
+  
+  if (tenant_id) {
+    query = query.eq("tenant_id", tenant_id);
+  } else if (!isSuperAdmin(req)) {
+    return res.json([]);
+  }
+  
+  const { data, error } = await query.order("name");
+  if (error) return res.status(400).json({ error: error.message });
   const products = data?.map((p: any) => ({ ...p, supplier_name: p.suppliers?.name })) || [];
   res.json(products);
 });
@@ -372,7 +398,15 @@ app.delete("/api/products/:id", async (req, res) => {
 // Batches
 app.get("/api/batches", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data, error } = await supabase.from("batches").select("*, products(name)").eq("tenant_id", tenant_id).order("expiry_date", { ascending: true });
+  let query = supabase.from("batches").select("*, products(name)");
+  
+  if (tenant_id) {
+    query = query.eq("tenant_id", tenant_id);
+  } else if (!isSuperAdmin(req)) {
+    return res.json([]);
+  }
+  
+  const { data, error } = await query.order("expiry_date", { ascending: true });
   if (error) return res.status(400).json({ error: error.message });
   const batches = data?.map((b: any) => ({ ...b, product_name: b.products?.name })) || [];
   res.json(batches);
@@ -424,7 +458,16 @@ app.delete("/api/batches/:id", async (req, res) => {
 // Suppliers
 app.get("/api/suppliers", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data } = await supabase.from("suppliers").select("*").eq("tenant_id", tenant_id).order("name");
+  let query = supabase.from("suppliers").select("*");
+  
+  if (tenant_id) {
+    query = query.eq("tenant_id", tenant_id);
+  } else if (!isSuperAdmin(req)) {
+    return res.json([]);
+  }
+  
+  const { data, error } = await query.order("name");
+  if (error) return res.status(400).json({ error: error.message });
   res.json(data || []);
 });
 
@@ -454,7 +497,16 @@ app.delete("/api/suppliers/:id", async (req, res) => {
 // Accounts Payable
 app.get("/api/accounts-payable", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data } = await supabase.from("accounts_payable").select("*, suppliers(name)").eq("tenant_id", tenant_id).order("due_date", { ascending: true });
+  let query = supabase.from("accounts_payable").select("*, suppliers(name)");
+  
+  if (tenant_id) {
+    query = query.eq("tenant_id", tenant_id);
+  } else if (!isSuperAdmin(req)) {
+    return res.json([]);
+  }
+  
+  const { data, error } = await query.order("due_date", { ascending: true });
+  if (error) return res.status(400).json({ error: error.message });
   const bills = data?.map((b: any) => ({ ...b, supplier_name: b.suppliers?.name })) || [];
   res.json(bills);
 });
@@ -497,7 +549,16 @@ app.delete("/api/accounts-payable/:id", async (req, res) => {
 // Customers
 app.get("/api/customers", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data } = await supabase.from("customers").select("*").eq("tenant_id", tenant_id).order("name");
+  let query = supabase.from("customers").select("*");
+  
+  if (tenant_id) {
+    query = query.eq("tenant_id", tenant_id);
+  } else if (!isSuperAdmin(req)) {
+    return res.json([]);
+  }
+  
+  const { data, error } = await query.order("name");
+  if (error) return res.status(400).json({ error: error.message });
   res.json(data || []);
 });
 
@@ -526,7 +587,16 @@ app.delete("/api/customers/:id", async (req, res) => {
 // Inventory Logs
 app.get("/api/inventory-logs", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data } = await supabase.from("inventory_logs").select("*, products(name), app_users(name)").eq("tenant_id", tenant_id).order("created_at", { ascending: false }).limit(100);
+  let query = supabase.from("inventory_logs").select("*, products(name), app_users(name)");
+  
+  if (tenant_id) {
+    query = query.eq("tenant_id", tenant_id);
+  } else if (!isSuperAdmin(req)) {
+    return res.json([]);
+  }
+  
+  const { data, error } = await query.order("created_at", { ascending: false }).limit(100);
+  if (error) return res.status(400).json({ error: error.message });
   const logs = data?.map((l: any) => ({ ...l, product_name: l.products?.name, user_name: l.app_users?.name })) || [];
   res.json(logs);
 });
@@ -551,7 +621,16 @@ app.post("/api/inventory-logs", async (req, res) => {
 // Sales
 app.get("/api/sales", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { data } = await supabase.from("sales").select("*, customers(name)").eq("tenant_id", tenant_id).order("created_at", { ascending: false });
+  let query = supabase.from("sales").select("*, customers(name)");
+  
+  if (tenant_id) {
+    query = query.eq("tenant_id", tenant_id);
+  } else if (!isSuperAdmin(req)) {
+    return res.json([]);
+  }
+  
+  const { data, error } = await query.order("created_at", { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
   const sales = data?.map((s: any) => ({ ...s, customer_name: s.customers?.name })) || [];
   res.json(sales);
 });
@@ -682,19 +761,34 @@ app.delete("/api/sales/:id", async (req, res) => {
 app.get("/api/stats", async (req, res) => {
   const tenant_id = getTenantId(req);
   try {
-    const { data: allSales } = await supabase.from("sales").select("total_amount, created_at").eq("tenant_id", tenant_id);
+    let salesQuery = supabase.from("sales").select("total_amount, created_at");
+    let productsQuery = supabase.from("products").select("*");
+    let saleItemsQuery = supabase.from("sale_items").select("quantity, products(name)");
+
+    if (tenant_id) {
+      salesQuery = salesQuery.eq("tenant_id", tenant_id);
+      productsQuery = productsQuery.eq("tenant_id", tenant_id);
+      saleItemsQuery = saleItemsQuery.eq("tenant_id", tenant_id);
+    } else if (!isSuperAdmin(req)) {
+      return res.json({ totalRevenue: 0, todayRevenue: 0, lowStockCount: 0, topProducts: [] });
+    }
+
+    const { data: allSales } = await salesQuery;
     const totalRevenue = allSales?.reduce((sum, s) => sum + Number(s.total_amount), 0) || 0;
     const today = new Date().toISOString().split('T')[0];
     const todayRevenue = allSales?.filter(s => s.created_at.startsWith(today)).reduce((sum, s) => sum + Number(s.total_amount), 0) || 0;
-    const { count: lowStockCount } = await supabase.from("products").select("*", { count: 'exact', head: true }).eq("tenant_id", tenant_id).lte("stock_quantity", "min_stock_level");
-    const { data: saleItems } = await supabase.from("sale_items").select("quantity, products(name)").eq("tenant_id", tenant_id);
+    
+    const { data: products } = await productsQuery;
+    const lowStockCount = products?.filter(p => p.stock_quantity <= p.min_stock_level).length || 0;
+    
+    const { data: saleItems } = await saleItemsQuery;
     const productSales: any = {};
     saleItems?.forEach((item: any) => {
       const name = item.products?.name;
       if (name) productSales[name] = (productSales[name] || 0) + item.quantity;
     });
     const topProducts = Object.entries(productSales).map(([name, total_sold]) => ({ name, total_sold })).sort((a: any, b: any) => b.total_sold - a.total_sold).slice(0, 5);
-    res.json({ totalRevenue, todayRevenue, lowStockCount: lowStockCount || 0, topProducts });
+    res.json({ totalRevenue, todayRevenue, lowStockCount, topProducts });
   } catch (err: any) {
     console.error("Stats Error:", err);
     res.status(500).json({ error: "Erro ao carregar estatísticas" });
