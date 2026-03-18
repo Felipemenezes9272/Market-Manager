@@ -1,5 +1,5 @@
 {
-  "name": "Copy of Market Manager",
+  "name": "Market Manager",
   "description": "Sistema completo de gestão para depósitos e mercados, incluindo PDV, controle de estoque, validade, fornecedores e contas a pagar.",
   "requestFramePermissions": [
     "camera"

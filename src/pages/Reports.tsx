@@ -30,6 +30,37 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
   const [selectedReport, setSelectedReport] = useState<any | null>(null);
   const [dateRange, setDateRange] = useState('month');
 
+  const formatPaymentMethod = (method: any) => {
+    if (!method) return '-';
+    
+    // Handle array directly
+    if (Array.isArray(method)) {
+      const methods = method.map((p: any) => p.method || p).filter(Boolean);
+      return [...new Set(methods)].join(' / ');
+    }
+    
+    // Handle string (could be JSON or plain text)
+    if (typeof method === 'string') {
+      if (method.startsWith('[') || method.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(method);
+          if (Array.isArray(parsed)) {
+            const methods = parsed.map((p: any) => p.method || p).filter(Boolean);
+            return [...new Set(methods)].join(' / ');
+          }
+          if (typeof parsed === 'object' && parsed !== null) {
+            return parsed.method || JSON.stringify(parsed);
+          }
+        } catch (e) {
+          return method;
+        }
+      }
+      return method;
+    }
+    
+    return String(method);
+  };
+
   const reportTypes = [
     {
       id: 'sales',
@@ -79,15 +110,19 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
     doc.text(`Gerado em: ${date}`, 14, 30);
 
     if (report.id === 'sales') {
-      const tableData = sales.map(s => [
-        new Date(s.created_at).toLocaleDateString(),
-        s.customer_name || 'Consumidor',
-        s.payment_method,
-        `R$ ${Number(s.total_amount).toFixed(2)}`
-      ]);
+      const tableData = sales.map(s => {
+        const date = new Date(s.created_at);
+        return [
+          date.toLocaleDateString(),
+          date.toLocaleTimeString(),
+          s.customer_name || 'Consumidor',
+          formatPaymentMethod(s.payment_method),
+          `R$ ${Number(s.total_amount).toFixed(2)}`
+        ];
+      });
       autoTable(doc, {
         startY: 40,
-        head: [['Data', 'Cliente', 'Pagamento', 'Total']],
+        head: [['Data', 'Horário', 'Cliente', 'Pagamento', 'Total']],
         body: tableData,
       });
     } else if (report.id === 'inventory') {
@@ -235,6 +270,7 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
                       {selectedReport.id === 'sales' && (
                         <>
                           <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Data</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Horário</th>
                           <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Cliente</th>
                           <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Pagamento</th>
                           <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400 text-right">Total</th>
@@ -272,8 +308,9 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
                         {selectedReport.id === 'sales' && (
                           <>
                             <td className="py-4 font-bold text-slate-600 dark:text-slate-400">{new Date(item.created_at).toLocaleDateString()}</td>
+                            <td className="py-4 font-bold text-slate-600 dark:text-slate-400">{new Date(item.created_at).toLocaleTimeString()}</td>
                             <td className="py-4 font-black text-slate-900 dark:text-white">{item.customer_name || 'Consumidor'}</td>
-                            <td className="py-4 font-bold text-slate-500 uppercase text-xs tracking-wider">{item.payment_method}</td>
+                            <td className="py-4 font-bold text-slate-500 uppercase text-xs tracking-wider">{formatPaymentMethod(item.payment_method)}</td>
                             <td className="py-4 text-right font-black text-emerald-600">R$ {Number(item.total_amount).toFixed(2)}</td>
                           </>
                         )}

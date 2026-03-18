@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   ShoppingCart, 
   Search, 
@@ -26,20 +27,25 @@ interface POSProps {
   products: Product[];
   customers: Customer[];
   cashSession: CashSession | null;
-  onCheckout: (paymentMethod: string, cart: any[], customerId: number | null, discount: number, payments?: any[]) => Promise<void>;
+  onCheckout: (paymentMethod: string, cart: any[], customerId: number | null, discount: number, payments?: any[]) => Promise<any>;
   onOpenCash: (initialValue: number) => Promise<void>;
   addToast: (msg: string, type?: any) => void;
   apiFetch: (url: string, options?: any) => Promise<any>;
   fetchAllData: () => Promise<void>;
+  settings: any;
 }
 
-export default function POS({ products, customers, cashSession, onCheckout, onOpenCash, addToast, apiFetch, fetchAllData }: POSProps) {
+export default function POS({ products, customers, cashSession, onCheckout, onOpenCash, addToast, apiFetch, fetchAllData, settings }: POSProps) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [cart, setCart] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [discount, setDiscount] = useState(0);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [lastSale, setLastSale] = useState<any>(null);
   const [showOpenCashModal, setShowOpenCashModal] = useState(false);
   const [initialCashValue, setInitialCashValue] = useState('0');
   const [payments, setPayments] = useState<{ method: string, amount: number }[]>([]);
@@ -51,25 +57,44 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
     p.barcode?.includes(search)
   );
 
-  // Load editing sale if provided (will be handled by parent)
+  // Load editing sale if provided (via location state or event)
   useEffect(() => {
-    const handleEditSale = (e: any) => {
-      const sale = e.detail;
-      setEditingSale(sale);
-      setCart(sale.items.map((i: any) => ({
+    const loadSale = async (sale: any) => {
+      let fullSale = sale;
+      if (!sale.items) {
+        try {
+          fullSale = await apiFetch(`/api/sales/${sale.id}`);
+        } catch (err) {
+          addToast("Erro ao carregar detalhes da venda", "error");
+          return;
+        }
+      }
+      
+      setEditingSale(fullSale);
+      setCart(fullSale.items.map((i: any) => ({
         id: i.product_id,
         name: i.product_name,
         price: i.unit_price,
         quantity: i.quantity,
         image_url: i.image_url
       })));
-      setSelectedCustomer(customers.find(c => c.id === sale.customer_id) || null);
-      setDiscount(sale.discount || 0);
+      setSelectedCustomer(customers.find(c => c.id === fullSale.customer_id) || null);
+      setDiscount(fullSale.discount || 0);
       setIsCheckoutOpen(true);
+    };
+
+    if (location.state?.editSale) {
+      loadSale(location.state.editSale);
+      // Clear state so it doesn't reload on refresh
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+
+    const handleEditSale = (e: any) => {
+      loadSale(e.detail);
     };
     window.addEventListener('edit-sale', handleEditSale);
     return () => window.removeEventListener('edit-sale', handleEditSale);
-  }, [customers]);
+  }, [customers, location.state, navigate, location.pathname, addToast, apiFetch]);
 
   const addToCart = (product: Product) => {
     if (product.stock_quantity <= 0) {
@@ -126,7 +151,18 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
         addToast("Venda atualizada com sucesso!", "success");
         await fetchAllData();
       } else {
-        await onCheckout(payments.length === 1 ? payments[0].method : "Múltiplos", cart, selectedCustomer?.id || null, discount, payments);
+        const result = await onCheckout(payments.length === 1 ? payments[0].method : "Múltiplos", cart, selectedCustomer?.id || null, discount, payments);
+        setLastSale({
+          id: result.saleId,
+          items: [...cart],
+          total: finalTotal,
+          discount,
+          subtotal,
+          payments: [...payments],
+          customer: selectedCustomer,
+          date: new Date()
+        });
+        setShowSuccessModal(true);
       }
       setCart([]);
       setSelectedCustomer(null);
@@ -137,6 +173,115 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
     } catch (err) {
       // Error handled by parent
     }
+  };
+
+  const handlePrintReceipt = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const receiptHtml = `
+      <html>
+        <head>
+          <title>Comprovante de Venda - ${settings?.market_name || 'Market Manager'}</title>
+          <style>
+            @page { size: 80mm auto; margin: 0; }
+            body { 
+              font-family: 'Courier New', Courier, monospace; 
+              width: 80mm; 
+              padding: 5mm; 
+              font-size: 12px; 
+              line-height: 1.4;
+              color: #000;
+            }
+            .header { text-align: center; margin-bottom: 10px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
+            .market-name { font-size: 16px; font-weight: bold; text-transform: uppercase; }
+            .details { margin-bottom: 10px; }
+            .items { border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 10px; }
+            .item { display: flex; justify-content: space-between; margin-bottom: 2px; }
+            .totals { font-weight: bold; }
+            .total-row { display: flex; justify-content: space-between; }
+            .footer { text-align: center; margin-top: 20px; font-size: 10px; }
+            .divider { border-top: 1px dashed #000; margin: 10px 0; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="market-name">${settings?.market_name || 'MARKET MANAGER'}</div>
+            <div>${settings?.address || ''}</div>
+            <div>CNPJ: ${settings?.cnpj || ''}</div>
+            <div>Tel: ${settings?.phone || ''}</div>
+          </div>
+          
+          <div class="details">
+            <div>VENDA: #${lastSale?.id}</div>
+            <div>DATA: ${new Date(lastSale?.date).toLocaleString()}</div>
+            <div>CLIENTE: ${lastSale?.customer?.name || 'CONSUMIDOR FINAL'}</div>
+          </div>
+
+          <div class="divider"></div>
+          
+          <div class="items">
+            <div class="item" style="font-weight: bold; margin-bottom: 5px;">
+              <span>ITEM</span>
+              <span>QTD x V.UNIT</span>
+              <span>TOTAL</span>
+            </div>
+            ${lastSale?.items.map((item: any) => `
+              <div class="item">
+                <div style="flex: 1;">${item.name}</div>
+              </div>
+              <div class="item" style="margin-bottom: 5px;">
+                <span></span>
+                <span>${item.quantity} x R$ ${item.price.toFixed(2)}</span>
+                <span>R$ ${(item.quantity * item.price).toFixed(2)}</span>
+              </div>
+            `).join('')}
+          </div>
+
+          <div class="totals">
+            <div class="total-row">
+              <span>SUBTOTAL:</span>
+              <span>R$ ${lastSale?.subtotal.toFixed(2)}</span>
+            </div>
+            <div class="total-row">
+              <span>DESCONTO:</span>
+              <span>- R$ ${lastSale?.discount.toFixed(2)}</span>
+            </div>
+            <div class="total-row" style="font-size: 14px; margin-top: 5px;">
+              <span>TOTAL:</span>
+              <span>R$ ${lastSale?.total.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="payments">
+            <div style="font-weight: bold; margin-bottom: 5px;">PAGAMENTO:</div>
+            ${lastSale?.payments.map((p: any) => `
+              <div class="total-row">
+                <span>${p.method}:</span>
+                <span>R$ ${p.amount.toFixed(2)}</span>
+              </div>
+            `).join('')}
+          </div>
+
+          <div class="footer">
+            <div>Obrigado pela preferência!</div>
+            <div>Volte sempre.</div>
+          </div>
+
+          <script>
+            window.onload = () => {
+              window.print();
+              setTimeout(() => window.close(), 500);
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(receiptHtml);
+    printWindow.document.close();
   };
 
   const addPayment = (method: string) => {
@@ -478,6 +623,37 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
                     Cancelar Operação
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Modal */}
+      <AnimatePresence>
+        {showSuccessModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowSuccessModal(false)} className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" />
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden p-10 text-center">
+              <div className="w-24 h-24 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                <CheckCircle2 size={48} />
+              </div>
+              <h3 className="text-3xl font-black text-slate-900 dark:text-white mb-2">Venda Concluída!</h3>
+              <p className="text-slate-500 font-medium mb-8">A venda foi processada com sucesso no sistema.</p>
+              
+              <div className="space-y-4">
+                <button 
+                  onClick={handlePrintReceipt}
+                  className="w-full py-5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black rounded-2xl shadow-xl flex items-center justify-center gap-3 hover:scale-[1.02] transition-all"
+                >
+                  <Printer size={20} /> IMPRIMIR COMPROVANTE
+                </button>
+                <button 
+                  onClick={() => setShowSuccessModal(false)}
+                  className="w-full py-4 text-slate-400 font-black hover:text-slate-600 transition-colors uppercase text-xs tracking-widest"
+                >
+                  Fechar
+                </button>
               </div>
             </motion.div>
           </div>

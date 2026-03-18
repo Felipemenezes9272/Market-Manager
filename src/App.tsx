@@ -100,8 +100,8 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    const handleEditSale = () => {
-      navigate('/pos');
+    const handleEditSale = (e: any) => {
+      navigate('/pos', { state: { editSale: e.detail } });
     };
     window.addEventListener('edit-sale', handleEditSale);
     return () => window.removeEventListener('edit-sale', handleEditSale);
@@ -215,7 +215,7 @@ export default function App() {
   const handleCheckout = async (paymentMethod: string, cart: any[], customerId: number | null, discount: number, payments?: any[]) => {
     try {
       const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0) - discount;
-      await apiFetch('/api/sales', {
+      const response = await apiFetch('/api/sales', {
         method: 'POST',
         body: JSON.stringify({
           customer_id: customerId,
@@ -233,6 +233,7 @@ export default function App() {
       });
       addToast("Venda realizada com sucesso!", "success");
       fetchAllData();
+      return response;
     } catch (err) {
       addToast("Erro ao processar venda", "error");
       throw err;
@@ -309,7 +310,16 @@ export default function App() {
     todayRevenue: sales.filter(s => new Date(s.created_at).toDateString() === new Date().toDateString()).reduce((sum, s) => sum + Number(s.total_amount), 0),
     totalRevenue: bills.filter(b => b.status === 'Pendente').reduce((sum, b) => sum + Number(b.amount), 0),
     lowStockCount: products.filter(p => p.stock_quantity <= p.min_stock_level).length,
-    topProducts: products.sort((a, b) => b.stock_quantity - a.stock_quantity).slice(0, 5)
+    topProducts: products.sort((a, b) => b.stock_quantity - a.stock_quantity).slice(0, 5),
+    salesTrend: Array.from({ length: 7 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - i));
+      const daySales = sales.filter(s => new Date(s.created_at).toDateString() === date.toDateString());
+      return {
+        name: date.toLocaleDateString('pt-BR', { weekday: 'short' }),
+        sales: daySales.reduce((sum, s) => sum + Number(s.total_amount), 0)
+      };
+    })
   };
 
   const dashboardConfig = settings.dashboard_config || {
@@ -338,7 +348,7 @@ export default function App() {
                 onCloseCash={handleCloseCashSession}
               />
             } />
-            <Route path="/pos" element={<POS products={products} customers={customers} cashSession={cashSession} onCheckout={handleCheckout} onOpenCash={handleOpenCashSession} addToast={addToast} apiFetch={apiFetch} fetchAllData={fetchAllData} />} />
+            <Route path="/pos" element={<POS products={products} customers={customers} cashSession={cashSession} onCheckout={handleCheckout} onOpenCash={handleOpenCashSession} addToast={addToast} apiFetch={apiFetch} fetchAllData={fetchAllData} settings={settings} />} />
             <Route path="/products" element={<Products products={products} suppliers={suppliers} onAddProduct={crudHandlers.products.add} onUpdateProduct={crudHandlers.products.update} onDeleteProduct={crudHandlers.products.delete} addToast={addToast} />} />
             <Route path="/customers" element={<Customers customers={customers} onAddCustomer={crudHandlers.customers.add} onUpdateCustomer={crudHandlers.customers.update} onDeleteCustomer={crudHandlers.customers.delete} addToast={addToast} />} />
             <Route path="/suppliers" element={<Suppliers suppliers={suppliers} onAddSupplier={crudHandlers.suppliers.add} onUpdateSupplier={crudHandlers.suppliers.update} onDeleteSupplier={crudHandlers.suppliers.delete} addToast={addToast} />} />

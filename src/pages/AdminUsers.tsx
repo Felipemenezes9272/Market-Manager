@@ -35,7 +35,8 @@ export default function AdminUsers({ users, tenants, onAddUser, onUpdateUser, on
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const data = Object.fromEntries(formData.entries());
+    const data: any = Object.fromEntries(formData.entries());
+    data.is_super_admin = formData.get('is_super_admin') === 'on';
     
     try {
       if (editingUser) {

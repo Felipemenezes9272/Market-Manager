@@ -48,9 +48,17 @@ export default function Login({ onLogin, isLoading }: LoginProps) {
             <motion.div 
               initial={{ scale: 0.5 }}
               animate={{ scale: 1 }}
-              className="w-24 h-24 bg-white/20 backdrop-blur-md rounded-3xl flex items-center justify-center mx-auto mb-6 rotate-12 relative z-10"
+              className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 rotate-12 relative z-10 shadow-xl overflow-hidden"
             >
-              <Store className="text-white" size={48} />
+              <img 
+                src="https://market-manager-ruddy.vercel.app/logo.png" 
+                alt="Market Manager Logo" 
+                className="w-full h-full object-contain p-2"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full bg-amber-600 flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"></path><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"></path><path d="M2 7h20"></path><path d="M22 7v3a2 2 0 0 1-2 2v0a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12v0a2 2 0 0 1-2-2V7"></path></svg></div>';
+                }}
+              />
             </motion.div>
             <h1 className="text-3xl font-black text-white uppercase tracking-tight relative z-10">Market Manager</h1>
             <p className="text-amber-100 font-bold mt-2 relative z-10 uppercase text-[10px] tracking-[0.2em]">Sistema de Gestão Profissional</p>

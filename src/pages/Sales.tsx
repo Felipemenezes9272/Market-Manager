@@ -26,32 +26,55 @@ export default function Sales({ sales, addToast }: SalesProps) {
   const [paymentFilter, setPaymentFilter] = useState('Todos');
   const [selectedSale, setSelectedSale] = useState<any>(null);
 
-  const formatPaymentMethod = (method: string) => {
-    try {
-      const parsed = JSON.parse(method);
-      if (Array.isArray(parsed)) {
-        return parsed.map(p => p.method).join(' / ');
+  const formatPaymentMethod = (method: any) => {
+    if (!method) return '-';
+    
+    // Handle array directly
+    if (Array.isArray(method)) {
+      const methods = method.map((p: any) => p.method || p).filter(Boolean);
+      return [...new Set(methods)].join(' / ');
+    }
+    
+    // Handle string (could be JSON or plain text)
+    if (typeof method === 'string') {
+      if (method.startsWith('[') || method.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(method);
+          if (Array.isArray(parsed)) {
+            const methods = parsed.map((p: any) => p.method || p).filter(Boolean);
+            return [...new Set(methods)].join(' / ');
+          }
+          if (typeof parsed === 'object' && parsed !== null) {
+            return parsed.method || JSON.stringify(parsed);
+          }
+        } catch (e) {
+          return method;
+        }
       }
       return method;
-    } catch (e) {
-      return method;
     }
+    
+    return String(method);
   };
 
   const generateReport = () => {
     try {
-      const headers = ['ID', 'Data', 'Cliente', 'Total', 'Pagamento'];
-      const rows = filteredSales.map(s => [
-        `#${s.id}`,
-        format(new Date(s.created_at), 'dd/MM/yyyy HH:mm'),
-        s.customer_name || 'Consumidor Final',
-        `R$ ${Number(s.total_amount).toFixed(2)}`,
-        formatPaymentMethod(s.payment_method)
-      ]);
+      const headers = ['ID', 'Data', 'Horário', 'Cliente', 'Total', 'Pagamento'];
+      const rows = filteredSales.map(s => {
+        const date = new Date(s.created_at);
+        return [
+          `#${s.id}`,
+          format(date, 'dd/MM/yyyy'),
+          format(date, 'HH:mm:ss'),
+          s.customer_name || 'Consumidor Final',
+          `R$ ${Number(s.total_amount).toFixed(2)}`,
+          formatPaymentMethod(s.payment_method)
+        ];
+      });
 
       const csvContent = [
         headers.join(','),
-        ...rows.map(r => r.join(','))
+        ...rows.map(r => r.map(cell => `"${cell}"`).join(','))
       ].join('\n');
 
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

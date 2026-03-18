@@ -68,19 +68,40 @@ const getTenantId = (req: express.Request) => {
 const bootstrapAdmin = async () => {
   if (!supabase) return;
   try {
-    const { data: existing } = await supabase.from("app_users").select("id").eq("username", "felipe").maybeSingle();
+    // Check for existing super admin 'felipe'
+    // We use limit(1) to avoid errors if multiple exist due to previous bugs
+    const { data: existing, error: checkError } = await supabase
+      .from("app_users")
+      .select("id")
+      .eq("username", "felipe")
+      .limit(1)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error("Bootstrap check error:", checkError);
+      return;
+    }
+
     if (!existing) {
       console.log("Bootstrapping super admin 'felipe'...");
-      await supabase.from("app_users").insert([{
+      // Try to find the first tenant to associate with, or leave null
+      const { data: firstTenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+      
+      const { error: insertError } = await supabase.from("app_users").insert([{
+        tenant_id: firstTenant?.id || null,
         username: "felipe",
         password: "260892",
         name: "Felipe Super Admin",
         role: "admin",
         is_super_admin: true
       }]);
+      
+      if (insertError) {
+        console.error("Bootstrap insert error:", insertError);
+      }
     }
   } catch (err) {
-    console.error("Bootstrap error:", err);
+    console.error("Bootstrap unexpected error:", err);
   }
 };
 bootstrapAdmin();
@@ -92,14 +113,25 @@ app.get("/api/health", (req, res) => {
 app.post("/api/login", async (req, res) => {
   const { username, password } = req.body;
   try {
+    if (!supabase) {
+      return res.status(503).json({ error: "Supabase não configurado" });
+    }
+
+    // Use limit(1) to handle cases where multiple users might exist with same username/password
+    // (e.g. if bootstrap ran multiple times without tenant_id)
     const { data: user, error } = await supabase
       .from("app_users")
       .select("id, username, role, name, tenant_id, is_super_admin")
       .eq("username", username)
       .eq("password", password)
+      .limit(1)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase Login Error:", error);
+      throw error;
+    }
+
     if (user) {
       console.log(`Login successful for user: ${username} (ID: ${user.id})`);
       res.json(user);
@@ -109,7 +141,12 @@ app.post("/api/login", async (req, res) => {
     }
   } catch (err: any) {
     console.error("Login Route Error:", err);
-    res.status(500).json({ error: "Erro interno no servidor", details: err.message });
+    res.status(500).json({ 
+      error: "Erro interno no servidor", 
+      details: err.message,
+      code: err.code,
+      hint: err.hint
+    });
   }
 });
 

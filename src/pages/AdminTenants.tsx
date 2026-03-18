@@ -127,6 +127,10 @@ export default function AdminTenants({ tenants, onAddTenant, onUpdateTenant, onD
                 </span>
               </div>
               <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Licença</span>
+                <span className="text-sm font-black text-purple-600 uppercase tracking-tighter">Premium Anual</span>
+              </div>
+              <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Criada em</span>
                 <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{format(new Date(tenant.created_at), 'dd/MM/yyyy')}</span>
               </div>

@@ -162,15 +162,7 @@ export default function DashboardView({
           </div>
           <div className="h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={[
-                { name: 'Seg', sales: 4000 },
-                { name: 'Ter', sales: 3000 },
-                { name: 'Qua', sales: 5000 },
-                { name: 'Qui', sales: 2780 },
-                { name: 'Sex', sales: 1890 },
-                { name: 'Sáb', sales: 2390 },
-                { name: 'Dom', sales: 3490 },
-              ]}>
+              <AreaChart data={stats.salesTrend}>
                 <defs>
                   <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#d97706" stopOpacity={0.3}/>
