@@ -60,11 +60,17 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
   // Load editing sale if provided (via location state or event)
   useEffect(() => {
     const loadSale = async (sale: any) => {
+      if (!sale || !sale.id) {
+        console.error("loadSale: Invalid sale object", sale);
+        return;
+      }
+
       let fullSale = sale;
       if (!sale.items) {
         try {
           fullSale = await apiFetch(`/api/sales/${sale.id}`);
         } catch (err) {
+          console.error("Error loading sale details:", err);
           addToast("Erro ao carregar detalhes da venda", "error");
           return;
         }
@@ -92,8 +98,28 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
     const handleEditSale = (e: any) => {
       loadSale(e.detail);
     };
+
+    const handlePrintReceiptEvent = (e: any) => {
+      const sale = e.detail;
+      // We need to make sure we have items
+      if (!sale.items) {
+        apiFetch(`/api/sales/${sale.id}`).then(fullSale => {
+          handlePrintReceipt(fullSale);
+        }).catch(err => {
+          console.error("Error fetching sale for print:", err);
+          addToast("Erro ao carregar venda para impressão", "error");
+        });
+      } else {
+        handlePrintReceipt(sale);
+      }
+    };
+
     window.addEventListener('edit-sale', handleEditSale);
-    return () => window.removeEventListener('edit-sale', handleEditSale);
+    window.addEventListener('print-receipt', handlePrintReceiptEvent);
+    return () => {
+      window.removeEventListener('edit-sale', handleEditSale);
+      window.removeEventListener('print-receipt', handlePrintReceiptEvent);
+    };
   }, [customers, location.state, navigate, location.pathname, addToast, apiFetch]);
 
   const addToCart = (product: Product) => {
@@ -138,18 +164,30 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
 
     try {
       if (editingSale) {
-        await apiFetch(`/api/sales/${editingSale.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            customer_id: selectedCustomer?.id || null,
-            items: cart,
-            total_amount: finalTotal,
-            discount,
-            payments
-          })
-        });
-        addToast("Venda atualizada com sucesso!", "success");
-        await fetchAllData();
+        try {
+          await apiFetch(`/api/sales/${editingSale.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              customer_id: selectedCustomer?.id || null,
+              items: cart.map(item => ({
+                product_id: item.id,
+                quantity: item.quantity,
+                unit_price: item.price,
+                discount: 0
+              })),
+              total_amount: finalTotal,
+              discount,
+              payment_method: payments.length === 1 ? payments[0].method : "Múltiplos",
+              payments
+            })
+          });
+          addToast("Venda atualizada com sucesso!", "success");
+          await fetchAllData();
+        } catch (err: any) {
+          console.error("Error updating sale:", err);
+          addToast(err.message || "Erro ao atualizar venda", "error");
+          return;
+        }
       } else {
         const result = await onCheckout(payments.length === 1 ? payments[0].method : "Múltiplos", cart, selectedCustomer?.id || null, discount, payments);
         setLastSale({
@@ -175,9 +213,22 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
     }
   };
 
-  const handlePrintReceipt = () => {
+  const handlePrintReceipt = (saleToPrint?: any) => {
+    const sale = saleToPrint || lastSale;
+    if (!sale) {
+      addToast("Nenhuma venda selecionada para impressão", "error");
+      return;
+    }
+
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
+
+    // Ensure items exist
+    const items = sale.items || [];
+    const subtotalValue = sale.subtotal || sale.total_amount || items.reduce((s: number, i: any) => s + (i.price * i.quantity || i.unit_price * i.quantity), 0);
+    const discountValue = sale.discount || 0;
+    const totalValue = sale.total || sale.total_amount || (subtotalValue - discountValue);
+    const paymentsList = sale.payments || (sale.payment_method ? [{ method: sale.payment_method, amount: totalValue }] : []);
 
     const receiptHtml = `
       <html>
@@ -213,9 +264,9 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
           </div>
           
           <div class="details">
-            <div>VENDA: #${lastSale?.id}</div>
-            <div>DATA: ${new Date(lastSale?.date).toLocaleString()}</div>
-            <div>CLIENTE: ${lastSale?.customer?.name || 'CONSUMIDOR FINAL'}</div>
+            <div>VENDA: #${sale.id}</div>
+            <div>DATA: ${new Date(sale.date || sale.created_at).toLocaleString()}</div>
+            <div>CLIENTE: ${sale.customer?.name || sale.customer_name || 'CONSUMIDOR FINAL'}</div>
           </div>
 
           <div class="divider"></div>
@@ -226,14 +277,14 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
               <span>QTD x V.UNIT</span>
               <span>TOTAL</span>
             </div>
-            ${lastSale?.items.map((item: any) => `
+            ${items.map((item: any) => `
               <div class="item">
-                <div style="flex: 1;">${item.name}</div>
+                <div style="flex: 1;">${item.name || item.product_name}</div>
               </div>
               <div class="item" style="margin-bottom: 5px;">
                 <span></span>
-                <span>${item.quantity} x R$ ${item.price.toFixed(2)}</span>
-                <span>R$ ${(item.quantity * item.price).toFixed(2)}</span>
+                <span>${item.quantity} x R$ ${(item.price || item.unit_price).toFixed(2)}</span>
+                <span>R$ ${(item.quantity * (item.price || item.unit_price)).toFixed(2)}</span>
               </div>
             `).join('')}
           </div>
@@ -241,15 +292,15 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
           <div class="totals">
             <div class="total-row">
               <span>SUBTOTAL:</span>
-              <span>R$ ${lastSale?.subtotal.toFixed(2)}</span>
+              <span>R$ ${Number(subtotalValue).toFixed(2)}</span>
             </div>
             <div class="total-row">
               <span>DESCONTO:</span>
-              <span>- R$ ${lastSale?.discount.toFixed(2)}</span>
+              <span>- R$ ${Number(discountValue).toFixed(2)}</span>
             </div>
             <div class="total-row" style="font-size: 14px; margin-top: 5px;">
               <span>TOTAL:</span>
-              <span>R$ ${lastSale?.total.toFixed(2)}</span>
+              <span>R$ ${Number(totalValue).toFixed(2)}</span>
             </div>
           </div>
 
@@ -257,10 +308,10 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
 
           <div class="payments">
             <div style="font-weight: bold; margin-bottom: 5px;">PAGAMENTO:</div>
-            ${lastSale?.payments.map((p: any) => `
+            ${paymentsList.map((p: any) => `
               <div class="total-row">
-                <span>${p.method}:</span>
-                <span>R$ ${p.amount.toFixed(2)}</span>
+                <span>${p.method || p}:</span>
+                <span>R$ ${Number(p.amount || totalValue).toFixed(2)}</span>
               </div>
             `).join('')}
           </div>

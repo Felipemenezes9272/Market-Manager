@@ -15,6 +15,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { cn } from '../utils';
+import { apiFetch } from '../api';
 
 interface SalesProps {
   sales: any[];
@@ -25,6 +26,17 @@ export default function Sales({ sales, addToast }: SalesProps) {
   const [search, setSearch] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('Todos');
   const [selectedSale, setSelectedSale] = useState<any>(null);
+
+  const handleSelectSale = async (sale: any) => {
+    setSelectedSale(sale);
+    try {
+      const fullSale = await apiFetch(`/api/sales/${sale.id}`);
+      setSelectedSale(fullSale);
+    } catch (err) {
+      console.error("Error fetching full sale details:", err);
+      addToast("Erro ao carregar itens da venda", "error");
+    }
+  };
 
   const formatPaymentMethod = (method: any) => {
     if (!method) return '-';
@@ -182,7 +194,7 @@ export default function Sales({ sales, addToast }: SalesProps) {
                   </td>
                   <td className="px-8 py-6">
                     <button 
-                      onClick={() => setSelectedSale(sale)}
+                      onClick={() => handleSelectSale(sale)}
                       className="p-2 text-slate-400 hover:text-amber-600 transition-colors opacity-0 group-hover:opacity-100"
                     >
                       <Eye size={20} />
@@ -261,7 +273,14 @@ export default function Sales({ sales, addToast }: SalesProps) {
                     >
                       <Receipt size={20} /> EDITAR VENDA
                     </button>
-                    <button className="flex-1 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:scale-105 transition-all">
+                    <button 
+                      onClick={() => {
+                        const event = new CustomEvent('print-receipt', { detail: selectedSale });
+                        window.dispatchEvent(event);
+                        addToast("Enviando para impressão...", "success");
+                      }}
+                      className="flex-1 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-8 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:scale-105 transition-all"
+                    >
                       <Receipt size={20} /> REIMPRIMIR CUPOM
                     </button>
                   </div>

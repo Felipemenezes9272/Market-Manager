@@ -123,17 +123,30 @@ export default function AdminTenants({ tenants, onAddTenant, onUpdateTenant, onD
                   tenant.status === 'active' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
                 )}>
                   {tenant.status === 'active' ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                  {tenant.status === 'active' ? 'Ativa' : 'Inativa'}
+                  {tenant.status === 'active' ? 'Ativa' : 'Suspensa'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Licença</span>
-                <span className="text-sm font-black text-purple-600 uppercase tracking-tighter">Premium Anual</span>
+                <span className="text-sm font-black text-purple-600 uppercase tracking-tighter">
+                  {tenant.license_type === 'monthly' && 'Mensal'}
+                  {tenant.license_type === 'quarterly' && 'Trimestral'}
+                  {tenant.license_type === 'semiannual' && 'Semestral'}
+                  {tenant.license_type === 'annual' && 'Anual'}
+                  {!tenant.license_type && 'Não definida'}
+                </span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Criada em</span>
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{format(new Date(tenant.created_at), 'dd/MM/yyyy')}</span>
-              </div>
+              {tenant.license_end_date && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Expira em</span>
+                  <span className={cn(
+                    "text-sm font-bold",
+                    new Date(tenant.license_end_date) < new Date() ? "text-rose-600" : "text-slate-700 dark:text-slate-200"
+                  )}>
+                    {format(new Date(tenant.license_end_date), 'dd/MM/yyyy')}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800">
@@ -197,13 +210,36 @@ export default function AdminTenants({ tenants, onAddTenant, onUpdateTenant, onD
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Status</label>
-                  <select name="status" defaultValue={editingTenant?.status || 'active'} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-purple-500/20">
-                    <option value="active">Ativa</option>
-                    <option value="inactive">Inativa</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Status</label>
+                    <select name="status" defaultValue={editingTenant?.status || 'active'} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-purple-500/20">
+                      <option value="active">Ativa</option>
+                      <option value="suspended">Suspensa</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Tipo de Licença</label>
+                    <select name="license_type" defaultValue={editingTenant?.license_type || 'monthly'} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-purple-500/20">
+                      <option value="monthly">Mensal</option>
+                      <option value="quarterly">Trimestral</option>
+                      <option value="semiannual">Semestral</option>
+                      <option value="annual">Anual</option>
+                    </select>
+                  </div>
                 </div>
+
+                {editingTenant && (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Data de Expiração</label>
+                    <input 
+                      type="date" 
+                      name="license_end_date" 
+                      defaultValue={editingTenant.license_end_date ? format(new Date(editingTenant.license_end_date), 'yyyy-MM-dd') : ''} 
+                      className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-purple-500/20" 
+                    />
+                  </div>
+                )}
                 
                 <div className="flex gap-4 pt-4">
                   <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-white font-black rounded-2xl hover:bg-slate-200 transition-all">

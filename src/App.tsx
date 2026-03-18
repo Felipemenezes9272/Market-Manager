@@ -153,6 +153,9 @@ export default function App() {
       console.error('Error fetching data:', err);
       if (err.status === 401) {
         handleLogout();
+      } else if (err.status === 403) {
+        addToast(err.message || "Acesso suspenso", "error");
+        handleLogout();
       }
     }
   };
@@ -295,7 +298,7 @@ export default function App() {
     admin: {
       tenants: {
         add: async (data: any) => { await apiFetch('/api/tenants', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); },
-        update: async (id: number, data: any) => { await apiFetch(`/api/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }); fetchAllData(); },
+        update: async (id: number, data: any) => { await apiFetch(`/api/tenants/${id}`, { method: 'PATCH', body: JSON.stringify(data) }); fetchAllData(); },
         delete: async (id: number) => { await apiFetch(`/api/tenants/${id}`, { method: 'DELETE' }); fetchAllData(); }
       },
       users: {

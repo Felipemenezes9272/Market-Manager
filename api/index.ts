@@ -50,6 +50,38 @@ app.use("/api", async (req, res, next) => {
     console.error(`Auth Middleware Error for userId ${userId}:`, userErr || "User not found");
     return res.status(401).json({ error: "Usuário não encontrado" });
   }
+
+  // Check tenant status and license if not super admin
+  if (user.tenant_id && !user.is_super_admin) {
+    // Try to get status and license from tenants table first
+    let { data: tenant, error: tErr } = await supabase.from('tenants').select('status, license_end_date').eq('id', user.tenant_id).maybeSingle();
+    
+    let status = tenant?.status || 'active';
+    let license_end_date = tenant?.license_end_date;
+
+    // If columns are missing or query failed, try settings table as fallback
+    if (tErr || !tenant) {
+      const { data: settings } = await supabase.from('settings')
+        .select('key, value')
+        .eq('tenant_id', user.tenant_id)
+        .in('key', ['status', 'license_end_date']);
+      
+      if (settings) {
+        const statusSetting = settings.find(s => s.key === 'status');
+        const licenseSetting = settings.find(s => s.key === 'license_end_date');
+        if (statusSetting) status = statusSetting.value;
+        if (licenseSetting) license_end_date = licenseSetting.value;
+      }
+    }
+
+    const isExpired = license_end_date && new Date(license_end_date) < new Date();
+    if (status === 'suspended' || isExpired) {
+      return res.status(403).json({ 
+        error: "Acesso suspenso", 
+        details: isExpired ? "Sua licença expirou. Por favor, entre em contato com o administrador." : "Sua conta foi suspensa."
+      });
+    }
+  }
   
   (req as any).tenant_id = user.tenant_id;
   (req as any).is_super_admin = user.is_super_admin;
@@ -138,6 +170,20 @@ app.post("/api/login", async (req, res) => {
     }
 
     if (user) {
+      // Check tenant status if not super admin
+      if (user.tenant_id && !user.is_super_admin) {
+        const { data: tenant } = await supabase.from('tenants').select('status, license_end_date').eq('id', user.tenant_id).single();
+        if (tenant) {
+          const isExpired = tenant.license_end_date && new Date(tenant.license_end_date) < new Date();
+          if (tenant.status === 'suspended' || isExpired) {
+            return res.status(403).json({ 
+              error: "Acesso suspenso", 
+              details: isExpired ? "Sua licença expirou. Por favor, entre em contato com o administrador." : "Sua conta foi suspensa."
+            });
+          }
+        }
+      }
+      
       console.log(`Login successful for user: ${username} (ID: ${user.id})`);
       res.json(user);
     } else {
@@ -158,15 +204,94 @@ app.post("/api/login", async (req, res) => {
 // Tenant Management
 app.get("/api/tenants", async (req, res) => {
   if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
-  const { data, error } = await supabase.from("tenants").select("*").order("name");
+  
+  // Try to get all columns first
+  let { data, error } = await supabase.from("tenants").select("*").order("name");
+  
+  // If it fails with 400, try to get only basic columns
+  if (error && error.code === 'PGRST204') { // Column not found or similar
+    const { data: basicData, error: basicError } = await supabase.from("tenants").select("id, name, slug, created_at").order("name");
+    if (basicError) return res.status(400).json({ error: basicError.message });
+    data = basicData;
+  } else if (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
+  // If we have data, try to enrich it with license info from settings for each tenant
+  if (data && data.length > 0) {
+    const enrichedData = await Promise.all(data.map(async (tenant: any) => {
+      // Only enrich if license info is missing from the tenant object
+      if (!tenant.license_type || !tenant.license_end_date || !tenant.status) {
+        const { data: settings } = await supabase.from('settings')
+          .select('key, value')
+          .eq('tenant_id', tenant.id)
+          .in('key', ['status', 'license_type', 'license_start_date', 'license_end_date']);
+        
+        if (settings) {
+          const settingsObj = settings.reduce((acc: any, curr: any) => {
+            acc[curr.key] = curr.value;
+            return acc;
+          }, {});
+          return { ...tenant, ...settingsObj };
+        }
+      }
+      return tenant;
+    }));
+    return res.json(enrichedData);
+  }
+
   res.json(data || []);
 });
 
 app.post("/api/tenants", async (req, res) => {
   if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
-  const { name, slug, admin_username, admin_password, admin_name } = req.body;
-  const { data: tenant, error: tErr } = await supabase.from("tenants").insert([{ name, slug }]).select().single();
-  if (tErr) return res.status(400).json({ error: tErr.message });
+  const { name, slug, admin_username, admin_password, admin_name, license_type } = req.body;
+  
+  // Calculate license end date
+  let license_end_date = new Date();
+  if (license_type === 'monthly') license_end_date.setMonth(license_end_date.getMonth() + 1);
+  else if (license_type === 'quarterly') license_end_date.setMonth(license_end_date.getMonth() + 3);
+  else if (license_type === 'semiannual') license_end_date.setMonth(license_end_date.getMonth() + 6);
+  else if (license_type === 'annual') license_end_date.setFullYear(license_end_date.getFullYear() + 1);
+  else license_end_date.setMonth(license_end_date.getMonth() + 1); // Default to monthly
+
+  const license_start_date = new Date().toISOString();
+  const license_end_date_str = license_end_date.toISOString();
+
+  // Try to insert with all columns first
+  let { data: tenant, error: tErr } = await supabase.from("tenants").insert([{ 
+    name, 
+    slug, 
+    status: 'active',
+    license_type,
+    license_start_date,
+    license_end_date: license_end_date_str
+  }]).select().maybeSingle();
+  
+  // If it fails with 400, try to insert only basic columns and then update settings
+  if (tErr && tErr.code === 'PGRST204') {
+    const { data: basicTenant, error: basicError } = await supabase.from("tenants").insert([{ 
+      name, 
+      slug 
+    }]).select().maybeSingle();
+    
+    if (basicError) return res.status(400).json({ error: basicError.message });
+    tenant = basicTenant;
+
+    // Store license info in settings table as fallback
+    const licenseSettings = [
+      { tenant_id: tenant.id, key: 'status', value: 'active' },
+      { tenant_id: tenant.id, key: 'license_type', value: license_type },
+      { tenant_id: tenant.id, key: 'license_start_date', value: license_start_date },
+      { tenant_id: tenant.id, key: 'license_end_date', value: license_end_date_str }
+    ];
+    await supabase.from('settings').insert(licenseSettings);
+  } else if (tErr) {
+    return res.status(400).json({ error: tErr.message });
+  }
+
+  if (!tenant) return res.status(400).json({ error: "Erro ao criar loja" });
+
   const { error: uErr } = await supabase.from("app_users").insert([{
     tenant_id: tenant.id, username: admin_username, password: admin_password, name: admin_name, role: 'admin'
   }]);
@@ -174,18 +299,53 @@ app.post("/api/tenants", async (req, res) => {
   res.json({ success: true, tenantId: tenant.id });
 });
 
-app.patch("/api/tenants/:id/status", async (req, res) => {
+app.patch("/api/tenants/:id", async (req, res) => {
   if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
-  const { status } = req.body;
-  await supabase.from("tenants").update({ status }).eq("id", req.params.id);
-  res.json({ success: true });
-});
+  const { name, slug, status, license_type, license_end_date } = req.body;
+  
+  // Try to update all columns first
+  const { error } = await supabase.from("tenants").update({ 
+    name, 
+    slug, 
+    status, 
+    license_type, 
+    license_end_date 
+  }).eq("id", req.params.id);
+  
+  // If it fails with 400, try to update only basic columns and then update settings
+  if (error && error.code === 'PGRST204') {
+    const { error: basicError } = await supabase.from("tenants").update({ 
+      name, 
+      slug 
+    }).eq("id", req.params.id);
+    
+    if (basicError) return res.status(400).json({ error: basicError.message });
 
-app.put("/api/tenants/:id", async (req, res) => {
-  if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
-  const { name, slug, status } = req.body;
-  const { error } = await supabase.from("tenants").update({ name, slug, status }).eq("id", req.params.id);
-  if (error) return res.status(400).json({ error: error.message });
+    // Update license info in settings table as fallback
+    const licenseUpdates = [
+      { key: 'status', value: status },
+      { key: 'license_type', value: license_type },
+      { key: 'license_end_date', value: license_end_date }
+    ].filter(u => u.value !== undefined);
+
+    for (const update of licenseUpdates) {
+      const { data: existing } = await supabase.from('settings')
+        .select('id')
+        .eq('tenant_id', req.params.id)
+        .eq('key', update.key)
+        .is('user_id', null)
+        .maybeSingle();
+      
+      if (existing) {
+        await supabase.from('settings').update({ value: update.value }).eq('id', existing.id);
+      } else {
+        await supabase.from('settings').insert([{ tenant_id: req.params.id, key: update.key, value: update.value }]);
+      }
+    }
+  } else if (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
   res.json({ success: true });
 });
 
@@ -198,14 +358,41 @@ app.delete("/api/tenants/:id", async (req, res) => {
 
 // User Management
 app.get("/api/admin/users", async (req, res) => {
+  if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
   const { data, error } = await supabase.from("app_users").select("*, tenants:tenant_id (name)").order("name");
   if (error) return res.status(400).json({ error: error.message });
   res.json(data || []);
 });
 
-app.put("/api/admin/users/:id", async (req, res) => {
+app.post("/api/admin/users", async (req, res) => {
+  if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
   const { name, username, password, role, tenant_id, is_super_admin } = req.body;
-  const updateData: any = { name, username, role, tenant_id, is_super_admin };
+  const { data, error } = await supabase.from("app_users").insert([{
+    name,
+    username,
+    password,
+    role,
+    tenant_id: tenant_id ? Number(tenant_id) : null,
+    is_super_admin: Boolean(is_super_admin)
+  }]).select().single();
+  
+  if (error) {
+    console.error("Error creating user:", error);
+    return res.status(400).json({ error: error.message });
+  }
+  res.json(data);
+});
+
+app.put("/api/admin/users/:id", async (req, res) => {
+  if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
+  const { name, username, password, role, tenant_id, is_super_admin } = req.body;
+  const updateData: any = { 
+    name, 
+    username, 
+    role, 
+    tenant_id: tenant_id ? Number(tenant_id) : null, 
+    is_super_admin: Boolean(is_super_admin) 
+  };
   if (password) updateData.password = password;
   const { error } = await supabase.from("app_users").update(updateData).eq("id", req.params.id);
   if (error) return res.status(400).json({ error: error.message });
@@ -213,6 +400,7 @@ app.put("/api/admin/users/:id", async (req, res) => {
 });
 
 app.delete("/api/admin/users/:id", async (req, res) => {
+  if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
   const { error } = await supabase.from("app_users").delete().eq("id", req.params.id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ success: true });
@@ -711,23 +899,36 @@ app.put("/api/sales/:id", async (req, res) => {
       total_amount: Number(total_amount),
       discount: Number(discount || 0),
       payment_method: finalPaymentMethod
-    }).eq("id", saleId).eq("tenant_id", tenant_id);
+    }).eq("id", Number(saleId)).eq("tenant_id", tenant_id);
 
     if (saleErr) throw saleErr;
 
     // 4. Insert new items and update stock
-    for (const item of items) {
-      await supabase.from("sale_items").insert([{ 
-        tenant_id, 
-        sale_id: Number(saleId), 
-        product_id: Number(item.product_id || item.id), 
-        quantity: Number(item.quantity), 
-        unit_price: Number(item.unit_price || item.price), 
-        discount: Number(item.discount || 0) 
-      }]);
-      const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", item.product_id || item.id).eq("tenant_id", tenant_id).single();
-      const newStock = (product?.stock_quantity || 0) - Number(item.quantity);
-      await supabase.from("products").update({ stock_quantity: newStock }).eq("id", item.product_id || item.id).eq("tenant_id", tenant_id);
+    if (items && Array.isArray(items)) {
+      for (const item of items) {
+        const productId = Number(item.product_id || item.id);
+        const qty = Number(item.quantity);
+        const price = Number(item.unit_price || item.price);
+        const disc = Number(item.discount || 0);
+
+        const { error: itemErr } = await supabase.from("sale_items").insert([{ 
+          tenant_id, 
+          sale_id: Number(saleId), 
+          product_id: productId, 
+          quantity: qty, 
+          unit_price: price, 
+          discount: disc 
+        }]);
+
+        if (itemErr) {
+          console.error(`Error inserting sale item for product ${productId}:`, itemErr);
+          // We continue but log it
+        }
+
+        const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", productId).eq("tenant_id", tenant_id).single();
+        const newStock = (product?.stock_quantity || 0) - qty;
+        await supabase.from("products").update({ stock_quantity: newStock }).eq("id", productId).eq("tenant_id", tenant_id);
+      }
     }
 
     res.json({ success: true });

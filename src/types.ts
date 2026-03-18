@@ -83,7 +83,10 @@ export interface Tenant {
   id: number;
   name: string;
   slug: string;
-  status: string;
+  status: 'active' | 'suspended';
+  license_type?: 'monthly' | 'quarterly' | 'semiannual' | 'annual';
+  license_start_date?: string;
+  license_end_date?: string;
   created_at: string;
 }
 
