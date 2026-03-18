@@ -124,6 +124,7 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
           })
         });
         addToast("Venda atualizada com sucesso!", "success");
+        await fetchAllData();
       } else {
         await onCheckout(payments.length === 1 ? payments[0].method : "Múltiplos", cart, selectedCustomer?.id || null, discount, payments);
       }

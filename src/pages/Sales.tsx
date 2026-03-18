@@ -18,12 +18,57 @@ import { cn } from '../utils';
 
 interface SalesProps {
   sales: any[];
+  addToast: (msg: string, type?: any) => void;
 }
 
-export default function Sales({ sales }: SalesProps) {
+export default function Sales({ sales, addToast }: SalesProps) {
   const [search, setSearch] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('Todos');
   const [selectedSale, setSelectedSale] = useState<any>(null);
+
+  const formatPaymentMethod = (method: string) => {
+    try {
+      const parsed = JSON.parse(method);
+      if (Array.isArray(parsed)) {
+        return parsed.map(p => p.method).join(' / ');
+      }
+      return method;
+    } catch (e) {
+      return method;
+    }
+  };
+
+  const generateReport = () => {
+    try {
+      const headers = ['ID', 'Data', 'Cliente', 'Total', 'Pagamento'];
+      const rows = filteredSales.map(s => [
+        `#${s.id}`,
+        format(new Date(s.created_at), 'dd/MM/yyyy HH:mm'),
+        s.customer_name || 'Consumidor Final',
+        `R$ ${Number(s.total_amount).toFixed(2)}`,
+        formatPaymentMethod(s.payment_method)
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(r => r.join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `relatorio_vendas_${format(new Date(), 'yyyyMMdd_HHmm')}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      addToast("Relatório gerado com sucesso!", "success");
+    } catch (err) {
+      addToast("Erro ao gerar relatório", "error");
+    }
+  };
 
   const filteredSales = sales.filter(s => {
     const matchesSearch = s.id.toString().includes(search) || s.customer_name?.toLowerCase().includes(search.toLowerCase());
@@ -38,7 +83,10 @@ export default function Sales({ sales }: SalesProps) {
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Histórico de Vendas</h2>
           <p className="text-slate-500 font-medium mt-1">Visualize e gerencie todas as transações realizadas.</p>
         </div>
-        <button className="bg-white dark:bg-slate-900 text-slate-700 dark:text-white px-8 py-4 rounded-2xl font-black border border-slate-200 dark:border-slate-800 flex items-center gap-3 hover:bg-slate-50 transition-all">
+        <button 
+          onClick={generateReport}
+          className="bg-white dark:bg-slate-900 text-slate-700 dark:text-white px-8 py-4 rounded-2xl font-black border border-slate-200 dark:border-slate-800 flex items-center gap-3 hover:bg-slate-50 transition-all"
+        >
           <Download size={20} /> RELATÓRIO DE VENDAS
         </button>
       </div>
@@ -106,7 +154,7 @@ export default function Sales({ sales }: SalesProps) {
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400 font-medium">
                       <CreditCard size={14} />
-                      {sale.payment_method}
+                      {formatPaymentMethod(sale.payment_method)}
                     </div>
                   </td>
                   <td className="px-8 py-6">
@@ -155,7 +203,7 @@ export default function Sales({ sales }: SalesProps) {
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Pagamento</p>
-                    <p className="font-black text-slate-900 dark:text-white">{selectedSale.payment_method}</p>
+                    <p className="font-black text-slate-900 dark:text-white">{formatPaymentMethod(selectedSale.payment_method)}</p>
                   </div>
                 </div>
 

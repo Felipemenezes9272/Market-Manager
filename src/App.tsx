@@ -347,7 +347,7 @@ export default function App() {
             <Route path="/reports" element={<Reports sales={sales} products={products} customers={customers} bills={bills} />} />
             <Route path="/settings" element={<Settings settings={settings} onUpdateSettings={async (data) => { await apiFetch('/api/settings', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); }} addToast={addToast} />} />
             <Route path="/inventory" element={<Inventory logs={inventoryLogs} products={products} />} />
-            <Route path="/sales" element={<Sales sales={sales} />} />
+            <Route path="/sales" element={<Sales sales={sales} addToast={addToast} />} />
             
             {/* Admin Routes */}
             <Route element={<ProtectedRoute user={user} isAuthReady={isAuthReady} requiredAdmin />}>
