@@ -12,8 +12,9 @@ export const apiFetch = async (url: string, options: RequestInit = {}) => {
     console.warn(`apiFetch: No user ID found in localStorage for ${url}`);
   }
 
-  console.log(`Fetching: ${url}`, { method: options.method, headers });
-  const response = await fetch(url, { ...options, headers });
+  const method = options.method || 'GET';
+  console.log(`Fetching: ${method} ${url}`, { headers });
+  const response = await fetch(url, { ...options, method, headers });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const error = new Error(errorData.error || `HTTP error! status: ${response.status}`) as any;

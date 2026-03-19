@@ -12,6 +12,18 @@ const supabase = (supabaseUrl && supabaseServiceKey)
   ? createClient(supabaseUrl, supabaseServiceKey) 
   : null as any;
 
+// Helper to check if user is super admin
+const isSuperAdmin = (req: express.Request) => (req as any).is_super_admin;
+
+// Validation Middleware
+const validateFields = (fields: string[]) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const missing = fields.filter(f => !req.body[f] && req.body[f] !== 0 && req.body[f] !== false);
+  if (missing.length > 0) {
+    return res.status(400).json({ error: `Campos obrigatórios ausentes: ${missing.join(', ')}` });
+  }
+  next();
+};
+
 const app = express();
 app.use(express.json());
 
@@ -51,6 +63,26 @@ app.use("/api", async (req, res, next) => {
     return res.status(401).json({ error: "Usuário não encontrado" });
   }
 
+  // Strict separation for Super Admin
+  if (user.is_super_admin) {
+    const storePrefixes = [
+      "/api/products", "/api/sales", "/api/customers", "/api/suppliers", 
+      "/api/accounts-payable", "/api/batches", "/api/inventory", "/api/settings",
+      "/api/cash-sessions", "/api/reports", "/api/dashboard"
+    ];
+    
+    const isStoreRoute = storePrefixes.some(prefix => req.path.startsWith(prefix));
+    
+    if (isStoreRoute) {
+      console.warn(`Access Denied: Super Admin ${userId} attempted to access store route ${req.path}`);
+      return res.status(403).json({ error: "Super Administradores não possuem acesso às funções de loja para garantir a segurança e segregação de dados." });
+    }
+    
+    (req as any).tenant_id = null;
+  } else {
+    (req as any).tenant_id = user.tenant_id;
+  }
+
   // Check tenant status and license if not super admin
   if (user.tenant_id && !user.is_super_admin) {
     // Try to get status and license from tenants table first
@@ -86,6 +118,8 @@ app.use("/api", async (req, res, next) => {
   (req as any).tenant_id = user.tenant_id;
   (req as any).is_super_admin = user.is_super_admin;
   
+  console.log(`Auth Middleware: User ${userId} (Tenant: ${user.tenant_id}, SuperAdmin: ${user.is_super_admin}) accessing ${req.path}`);
+  
   next();
 });
 
@@ -93,10 +127,6 @@ app.use("/api", async (req, res, next) => {
 const getTenantId = (req: express.Request) => {
   const tid = (req as any).tenant_id;
   return (tid === undefined || tid === null || tid === 'null') ? null : tid;
-};
-
-const isSuperAdmin = (req: express.Request) => {
-  return (req as any).is_super_admin === true;
 };
 
 // --- API Routes ---
@@ -142,6 +172,23 @@ const bootstrapAdmin = async () => {
   }
 };
 bootstrapAdmin();
+
+// LGPD - Data Protection Routes
+app.post("/api/lgpd/request-data", async (req, res) => {
+  const userId = req.headers['x-user-id'];
+  const { type } = req.body; // 'export' or 'delete'
+  
+  console.log(`LGPD Request: User ${userId} requested ${type} of their data.`);
+  
+  // In a real system, this would trigger a background process or notify an admin
+  // For now, we simulate success
+  res.json({ 
+    success: true, 
+    message: type === 'export' 
+      ? "Sua solicitação de exportação de dados foi recebida. Você receberá um e-mail com seus dados em até 15 dias." 
+      : "Sua solicitação de exclusão de dados foi recebida e será processada conforme os prazos legais da LGPD."
+  });
+});
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
@@ -358,7 +405,10 @@ app.delete("/api/tenants/:id", async (req, res) => {
 
 // User Management
 app.get("/api/admin/users", async (req, res) => {
-  if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
+  if (!(req as any).is_super_admin) {
+    console.warn(`Access Denied: User is not a super admin for ${req.path}`);
+    return res.status(403).json({ error: "Acesso negado" });
+  }
   const { data, error } = await supabase.from("app_users").select("*, tenants:tenant_id (name)").order("name");
   if (error) return res.status(400).json({ error: error.message });
   res.json(data || []);
@@ -406,6 +456,126 @@ app.delete("/api/admin/users/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+// Dashboard Stats
+app.get("/api/dashboard/stats", async (req, res) => {
+  const tenant_id = getTenantId(req);
+  if (!tenant_id && !isSuperAdmin(req)) return res.json({});
+
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString();
+
+    // 1. Today's Revenue
+    let salesQuery = supabase.from("sales").select("total_amount").gte("created_at", todayISO);
+    if (tenant_id) salesQuery = salesQuery.eq("tenant_id", tenant_id);
+    const { data: todaySales } = await salesQuery;
+    const todayRevenue = todaySales?.reduce((sum, s) => sum + Number(s.total_amount), 0) || 0;
+
+    // 2. Pending Bills
+    let billsQuery = supabase.from("accounts_payable").select("amount").eq("status", "Pendente");
+    if (tenant_id) billsQuery = billsQuery.eq("tenant_id", tenant_id);
+    const { data: pendingBills } = await billsQuery;
+    const totalPendingBills = pendingBills?.reduce((sum, b) => sum + Number(b.amount), 0) || 0;
+
+    // 3. Low Stock Count
+    let productsQuery = supabase.from("products").select("id, stock_quantity, min_stock_level");
+    if (tenant_id) productsQuery = productsQuery.eq("tenant_id", tenant_id);
+    const { data: products } = await productsQuery;
+    const lowStockCount = products?.filter((p: any) => p.stock_quantity <= p.min_stock_level).length || 0;
+
+    // 4. Sales Trend (Last 7 days)
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      d.setHours(0, 0, 0, 0);
+      return d;
+    });
+
+    const salesTrend = await Promise.all(last7Days.map(async (date) => {
+      const nextDay = new Date(date);
+      nextDay.setDate(nextDay.getDate() + 1);
+      
+      let trendQuery = supabase.from("sales")
+        .select("total_amount")
+        .gte("created_at", date.toISOString())
+        .lt("created_at", nextDay.toISOString());
+      
+      if (tenant_id) trendQuery = trendQuery.eq("tenant_id", tenant_id);
+      
+      const { data } = await trendQuery;
+      return {
+        name: date.toLocaleDateString('pt-BR', { weekday: 'short' }),
+        sales: data?.reduce((sum, s) => sum + Number(s.total_amount), 0) || 0
+      };
+    }));
+
+    // 5. Top Products (Last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    let topProductsQuery = supabase.from("sale_items")
+      .select("product_id, quantity, products(name)")
+      .gte("created_at", thirtyDaysAgo.toISOString());
+    
+    if (tenant_id) topProductsQuery = topProductsQuery.eq("tenant_id", tenant_id);
+    
+    const { data: saleItems } = await topProductsQuery;
+    
+    const productSales: { [key: number]: { name: string, total_sold: number } } = {};
+    saleItems?.forEach((item: any) => {
+      const id = item.product_id;
+      if (!productSales[id]) {
+        productSales[id] = { name: item.products?.name || "Produto Desconhecido", total_sold: 0 };
+      }
+      productSales[id].total_sold += Number(item.quantity);
+    });
+
+    const topProducts = Object.values(productSales)
+      .sort((a, b) => b.total_sold - a.total_sold)
+      .slice(0, 5);
+
+    // 6. Expiry Alerts (Next 30 days)
+    const next30Days = new Date();
+    next30Days.setDate(next30Days.getDate() + 30);
+    
+    let expiryQuery = supabase.from("batches")
+      .select("id")
+      .lte("expiry_date", next30Days.toISOString())
+      .gte("expiry_date", new Date().toISOString());
+    
+    if (tenant_id) expiryQuery = expiryQuery.eq("tenant_id", tenant_id);
+    const { count: expiryAlertsCount } = await expiryQuery;
+
+    // 7. Today's Profit
+    let profitQuery = supabase.from("sale_items")
+      .select("quantity, unit_price, cost_price, discount")
+      .gte("created_at", todayISO);
+    
+    if (tenant_id) profitQuery = profitQuery.eq("tenant_id", tenant_id);
+    
+    const { data: todayItems } = await profitQuery;
+    const todayProfit = todayItems?.reduce((sum, item) => {
+      const revenue = (Number(item.unit_price) - Number(item.discount)) * Number(item.quantity);
+      const cost = Number(item.cost_price || 0) * Number(item.quantity);
+      return sum + (revenue - cost);
+    }, 0) || 0;
+
+    res.json({
+      todayRevenue,
+      todayProfit,
+      totalPendingBills,
+      lowStockCount,
+      expiryAlertsCount: expiryAlertsCount || 0,
+      salesTrend,
+      topProducts
+    });
+  } catch (err: any) {
+    console.error("Dashboard Stats Error:", err);
+    res.status(500).json({ error: "Erro ao carregar estatísticas" });
+  }
+});
+
 // Cash Flow
 app.get("/api/cash-flow/current", async (req, res) => {
   const tenant_id = getTenantId(req);
@@ -433,6 +603,16 @@ app.post("/api/cash-flow/close", async (req, res) => {
   const { error } = await supabase.from("cash_flow").update({ closed_at: new Date().toISOString(), final_value, expected_value: expected, status: "closed" }).eq("id", id).eq("tenant_id", tenant_id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ success: true });
+});
+
+// Admin Settings
+app.post("/api/admin/settings", async (req, res) => {
+  if (!isSuperAdmin(req)) return res.status(403).json({ error: "Acesso negado" });
+  
+  // In a real SaaS, this would update a global_settings table
+  // For now, we'll just return success
+  console.log("Super Admin updated global settings:", req.body);
+  res.json({ success: true, message: "Configurações globais atualizadas com sucesso!" });
 });
 
 // Settings
@@ -473,7 +653,12 @@ app.post("/api/settings", async (req, res) => {
   
   try {
     for (const [key, value] of Object.entries(settings)) {
-      const userSpecificKeys = ['theme', 'primary_color', 'sidebar_collapsed'];
+      const userSpecificKeys = [
+        'theme', 'primary_color', 'sidebar_collapsed', 'font_size', 'interface_density',
+        'pos_auto_focus', 'pos_auto_finalize', 'pos_auto_drawer', 'pos_confirm_cancel',
+        'pos_default_payment', 'pos_auto_print', 'pos_show_change', 'pos_fast_mode',
+        'pos_shortcuts_enabled', 'dashboard_config'
+      ];
       const isUserSpecific = userSpecificKeys.includes(key);
       
       const query = supabase.from("settings")
@@ -629,12 +814,41 @@ app.post("/api/batches", async (req, res) => {
 app.delete("/api/batches/:id", async (req, res) => {
   const tenant_id = getTenantId(req);
   try {
-    const { data: batch } = await supabase.from("batches").select("*").eq("id", req.params.id).eq("tenant_id", tenant_id).single();
+    const { data: batch, error: batchErr } = await supabase
+      .from("batches")
+      .select("*")
+      .eq("id", req.params.id)
+      .eq("tenant_id", tenant_id)
+      .maybeSingle();
+
+    if (batchErr) throw batchErr;
+
     if (batch) {
-      const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", batch.product_id).eq("tenant_id", tenant_id).single();
-      const newStock = Math.max(0, (product?.stock_quantity || 0) - Number(batch.quantity));
-      await supabase.from("products").update({ stock_quantity: newStock }).eq("id", batch.product_id).eq("tenant_id", tenant_id);
-      await supabase.from("batches").delete().eq("id", req.params.id).eq("tenant_id", tenant_id);
+      const { data: product, error: prodErr } = await supabase
+        .from("products")
+        .select("stock_quantity")
+        .eq("id", batch.product_id)
+        .eq("tenant_id", tenant_id)
+        .maybeSingle();
+
+      if (prodErr) throw prodErr;
+
+      if (product) {
+        const newStock = Math.max(0, (product.stock_quantity || 0) - Number(batch.quantity));
+        await supabase
+          .from("products")
+          .update({ stock_quantity: newStock })
+          .eq("id", batch.product_id)
+          .eq("tenant_id", tenant_id);
+      }
+
+      const { error: delErr } = await supabase
+        .from("batches")
+        .delete()
+        .eq("id", req.params.id)
+        .eq("tenant_id", tenant_id);
+
+      if (delErr) throw delErr;
     }
     res.json({ success: true });
   } catch (err: any) {
@@ -791,25 +1005,44 @@ app.get("/api/inventory-logs", async (req, res) => {
 
 app.post("/api/inventory-logs", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const { product_id, user_id, change_amount, reason } = req.body;
-  const { data, error } = await supabase.from("inventory_logs").insert([{ 
-    tenant_id, 
-    product_id: Number(product_id), 
-    user_id: Number(user_id), 
-    change_amount: Number(change_amount), 
-    reason 
-  }]).select().single();
-  if (error) return res.status(400).json({ error: error.message });
-  const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", product_id).eq("tenant_id", tenant_id).single();
-  const newStock = (product?.stock_quantity || 0) + Number(change_amount);
-  await supabase.from("products").update({ stock_quantity: newStock }).eq("id", product_id).eq("tenant_id", tenant_id);
-  res.json({ id: data.id });
+  const { product_id, user_id, type, quantity, notes } = req.body;
+  
+  try {
+    const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", product_id).eq("tenant_id", tenant_id).single();
+    const currentStock = product?.stock_quantity || 0;
+    const change = Number(quantity);
+    const newStock = type === 'Entrada' ? currentStock + change : 
+                     type === 'Saída' ? currentStock - change : 
+                     change; // For 'Ajuste', we might treat quantity as the new absolute stock or the change. 
+                             // Let's assume quantity is the CHANGE for Entrada/Saída and the NEW TOTAL for Ajuste if it's positive, 
+                             // but to keep it simple and consistent with the UI, let's say quantity is always the CHANGE.
+    
+    const finalStock = type === 'Ajuste' ? change : (type === 'Entrada' ? currentStock + change : currentStock - change);
+
+    const { data, error } = await supabase.from("inventory_logs").insert([{ 
+      tenant_id, 
+      product_id: Number(product_id), 
+      user_id: user_id ? Number(user_id) : null, 
+      type,
+      quantity: change,
+      resulting_stock: finalStock,
+      notes 
+    }]).select().single();
+
+    if (error) throw error;
+
+    await supabase.from("products").update({ stock_quantity: finalStock }).eq("id", product_id).eq("tenant_id", tenant_id);
+    
+    res.json({ id: data.id, resulting_stock: finalStock });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Sales
 app.get("/api/sales", async (req, res) => {
   const tenant_id = getTenantId(req);
-  let query = supabase.from("sales").select("*, customers(name)");
+  let query = supabase.from("sales").select("*, customers(name), sale_items(quantity, cost_price)");
   
   if (tenant_id) {
     query = query.eq("tenant_id", tenant_id);
@@ -819,7 +1052,18 @@ app.get("/api/sales", async (req, res) => {
   
   const { data, error } = await query.order("created_at", { ascending: false });
   if (error) return res.status(400).json({ error: error.message });
-  const sales = data?.map((s: any) => ({ ...s, customer_name: s.customers?.name })) || [];
+  const sales = data?.map((s: any) => {
+    const totalCost = s.sale_items?.reduce((sum: number, item: any) => {
+      const cost = Number(item.cost_price || 0);
+      return sum + (cost * Number(item.quantity || 0));
+    }, 0) || 0;
+    return { 
+      ...s, 
+      customer_name: s.customers?.name,
+      total_cost: totalCost,
+      profit: Number(s.total_amount) - totalCost
+    };
+  }) || [];
   res.json(sales);
 });
 
@@ -832,44 +1076,78 @@ app.get("/api/sales/:id", async (req, res) => {
   res.json({ ...sale, customer_name: (sale as any).customers?.name, customer_phone: (sale as any).customers?.phone, items: formattedItems });
 });
 
-app.post("/api/sales", async (req, res) => {
+app.post("/api/sales", validateFields(['items', 'total_amount', 'payment_method']), async (req, res) => {
   const tenant_id = getTenantId(req);
   const { customer_id, items, total_amount, discount, payment_method, payments } = req.body;
   
-  // Use payments if provided, otherwise fallback to payment_method
-  const finalPaymentMethod = payments ? JSON.stringify(payments) : payment_method;
+  if (!items || items.length === 0) {
+    return res.status(400).json({ error: "O carrinho não pode estar vazio" });
+  }
 
-  const { data: sale, error: saleErr } = await supabase.from("sales").insert([{ 
-    tenant_id, 
-    customer_id: customer_id ? Number(customer_id) : null, 
-    total_amount: Number(total_amount), 
-    discount: Number(discount || 0), 
-    payment_method: finalPaymentMethod
-  }]).select().single();
-  
-  if (saleErr) return res.status(400).json({ error: saleErr.message });
-  
-  for (const item of items) {
-    await supabase.from("sale_items").insert([{ 
+  try {
+    // Use payments if provided, otherwise fallback to payment_method
+    const finalPaymentMethod = payments ? JSON.stringify(payments) : payment_method;
+
+    const { data: sale, error: saleErr } = await supabase.from("sales").insert([{ 
       tenant_id, 
-      sale_id: sale.id, 
-      product_id: Number(item.product_id || item.id), 
-      quantity: Number(item.quantity), 
-      unit_price: Number(item.unit_price || item.price), 
-      discount: Number(item.discount || 0) 
-    }]);
-    const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", item.product_id || item.id).eq("tenant_id", tenant_id).single();
-    const newStock = (product?.stock_quantity || 0) - Number(item.quantity);
-    await supabase.from("products").update({ stock_quantity: newStock }).eq("id", item.product_id || item.id).eq("tenant_id", tenant_id);
+      customer_id: customer_id ? Number(customer_id) : null, 
+      total_amount: Number(total_amount), 
+      discount: Number(discount || 0), 
+      payment_method: finalPaymentMethod
+    }]).select().single();
+    
+    if (saleErr) throw saleErr;
+    
+    // Process items and update stock
+    const itemPromises = items.map(async (item: any) => {
+      const productId = Number(item.product_id || item.id);
+      const qty = Number(item.quantity);
+      
+      // 2. Update product stock and get cost price
+      const { data: product } = await supabase.from("products").select("stock_quantity, cost_price").eq("id", productId).eq("tenant_id", tenant_id).single();
+      
+      // 1. Insert sale item
+      const { error: itemErr } = await supabase.from("sale_items").insert([{ 
+        tenant_id, 
+        sale_id: sale.id, 
+        product_id: productId, 
+        quantity: qty, 
+        unit_price: Number(item.unit_price || item.price), 
+        cost_price: Number(product?.cost_price || 0),
+        discount: Number(item.discount || 0) 
+      }]);
+      
+      if (itemErr) throw itemErr;
+
+      const newStock = (product?.stock_quantity || 0) - qty;
+      await supabase.from("products").update({ stock_quantity: newStock }).eq("id", productId).eq("tenant_id", tenant_id);
+
+      // Create inventory log
+      await supabase.from("inventory_logs").insert([{
+        tenant_id,
+        product_id: productId,
+        user_id: req.headers['x-user-id'] ? Number(req.headers['x-user-id']) : null,
+        type: 'Saída',
+        quantity: qty,
+        resulting_stock: newStock,
+        notes: `Venda #${sale.id}`
+      }]);
+    });
+
+    await Promise.all(itemPromises);
+    
+    // Update customer points
+    if (customer_id) {
+      const { data: customer } = await supabase.from("customers").select("points").eq("id", customer_id).eq("tenant_id", tenant_id).single();
+      const newPoints = (customer?.points || 0) + Math.floor(Number(total_amount) / 10);
+      await supabase.from("customers").update({ points: newPoints }).eq("id", customer_id).eq("tenant_id", tenant_id);
+    }
+    
+    res.json({ success: true, saleId: sale.id });
+  } catch (err: any) {
+    console.error("Sale Creation Error:", err);
+    res.status(400).json({ error: err.message || "Erro ao processar venda" });
   }
-  
-  if (customer_id) {
-    const { data: customer } = await supabase.from("customers").select("points").eq("id", customer_id).eq("tenant_id", tenant_id).single();
-    const newPoints = (customer?.points || 0) + Math.floor(Number(total_amount) / 10);
-    await supabase.from("customers").update({ points: newPoints }).eq("id", customer_id).eq("tenant_id", tenant_id);
-  }
-  
-  res.json({ success: true, saleId: sale.id });
 });
 
 app.put("/api/sales/:id", async (req, res) => {
@@ -886,6 +1164,17 @@ app.put("/api/sales/:id", async (req, res) => {
         const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", item.product_id).eq("tenant_id", tenant_id).single();
         const revertedStock = (product?.stock_quantity || 0) + Number(item.quantity);
         await supabase.from("products").update({ stock_quantity: revertedStock }).eq("id", item.product_id).eq("tenant_id", tenant_id);
+
+        // Create inventory log for revert
+        await supabase.from("inventory_logs").insert([{
+          tenant_id,
+          product_id: item.product_id,
+          user_id: req.headers['x-user-id'] ? Number(req.headers['x-user-id']) : null,
+          type: 'Entrada',
+          quantity: Number(item.quantity),
+          resulting_stock: revertedStock,
+          notes: `Estorno de Venda #${saleId}`
+        }]);
       }
     }
 
@@ -911,12 +1200,17 @@ app.put("/api/sales/:id", async (req, res) => {
         const price = Number(item.unit_price || item.price);
         const disc = Number(item.discount || 0);
 
+        // Fetch current cost price for the product
+        const { data: prodData } = await supabase.from("products").select("cost_price").eq("id", productId).eq("tenant_id", tenant_id).single();
+        const costPrice = prodData?.cost_price || 0;
+
         const { error: itemErr } = await supabase.from("sale_items").insert([{ 
           tenant_id, 
           sale_id: Number(saleId), 
           product_id: productId, 
           quantity: qty, 
           unit_price: price, 
+          cost_price: costPrice,
           discount: disc 
         }]);
 
@@ -928,6 +1222,17 @@ app.put("/api/sales/:id", async (req, res) => {
         const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", productId).eq("tenant_id", tenant_id).single();
         const newStock = (product?.stock_quantity || 0) - qty;
         await supabase.from("products").update({ stock_quantity: newStock }).eq("id", productId).eq("tenant_id", tenant_id);
+
+        // Create inventory log for new item
+        await supabase.from("inventory_logs").insert([{
+          tenant_id,
+          product_id: productId,
+          user_id: req.headers['x-user-id'] ? Number(req.headers['x-user-id']) : null,
+          type: 'Saída',
+          quantity: qty,
+          resulting_stock: newStock,
+          notes: `Venda #${saleId} (Editada)`
+        }]);
       }
     }
 
@@ -947,6 +1252,17 @@ app.delete("/api/sales/:id", async (req, res) => {
     const { data: product } = await supabase.from("products").select("stock_quantity").eq("id", item.product_id).eq("tenant_id", tenant_id).single();
     const newStock = (product?.stock_quantity || 0) + Number(item.quantity);
     await supabase.from("products").update({ stock_quantity: newStock }).eq("id", item.product_id).eq("tenant_id", tenant_id);
+
+    // Create inventory log for deletion
+    await supabase.from("inventory_logs").insert([{
+      tenant_id,
+      product_id: item.product_id,
+      user_id: req.headers['x-user-id'] ? Number(req.headers['x-user-id']) : null,
+      type: 'Entrada',
+      quantity: Number(item.quantity),
+      resulting_stock: newStock,
+      notes: `Venda #${req.params.id} Excluída`
+    }]);
   }
   if (sale.customer_id) {
     const { data: customer } = await supabase.from("customers").select("points").eq("id", sale.customer_id).eq("tenant_id", tenant_id).single();
@@ -962,7 +1278,7 @@ app.delete("/api/sales/:id", async (req, res) => {
 app.get("/api/stats", async (req, res) => {
   const tenant_id = getTenantId(req);
   try {
-    let salesQuery = supabase.from("sales").select("total_amount, created_at");
+    let salesQuery = supabase.from("sales").select("total_amount, created_at, sale_items(quantity, cost_price)");
     let productsQuery = supabase.from("products").select("*");
     let saleItemsQuery = supabase.from("sale_items").select("quantity, products(name)");
 
@@ -971,13 +1287,26 @@ app.get("/api/stats", async (req, res) => {
       productsQuery = productsQuery.eq("tenant_id", tenant_id);
       saleItemsQuery = saleItemsQuery.eq("tenant_id", tenant_id);
     } else if (!isSuperAdmin(req)) {
-      return res.json({ totalRevenue: 0, todayRevenue: 0, lowStockCount: 0, topProducts: [] });
+      return res.json({ totalRevenue: 0, todayRevenue: 0, totalProfit: 0, todayProfit: 0, lowStockCount: 0, topProducts: [] });
     }
 
     const { data: allSales } = await salesQuery;
+    
+    const calculateProfit = (sale: any) => {
+      const totalCost = sale.sale_items?.reduce((sum: number, item: any) => {
+        const cost = Number(item.cost_price || 0);
+        return sum + (cost * Number(item.quantity || 0));
+      }, 0) || 0;
+      return Number(sale.total_amount) - totalCost;
+    };
+
     const totalRevenue = allSales?.reduce((sum, s) => sum + Number(s.total_amount), 0) || 0;
+    const totalProfit = allSales?.reduce((sum, s) => sum + calculateProfit(s), 0) || 0;
+    
     const today = new Date().toISOString().split('T')[0];
-    const todayRevenue = allSales?.filter(s => s.created_at.startsWith(today)).reduce((sum, s) => sum + Number(s.total_amount), 0) || 0;
+    const todaySales = allSales?.filter(s => s.created_at.startsWith(today)) || [];
+    const todayRevenue = todaySales.reduce((sum, s) => sum + Number(s.total_amount), 0) || 0;
+    const todayProfit = todaySales.reduce((sum, s) => sum + calculateProfit(s), 0) || 0;
     
     const { data: products } = await productsQuery;
     const lowStockCount = products?.filter(p => p.stock_quantity <= p.min_stock_level).length || 0;
@@ -989,7 +1318,7 @@ app.get("/api/stats", async (req, res) => {
       if (name) productSales[name] = (productSales[name] || 0) + item.quantity;
     });
     const topProducts = Object.entries(productSales).map(([name, total_sold]) => ({ name, total_sold })).sort((a: any, b: any) => b.total_sold - a.total_sold).slice(0, 5);
-    res.json({ totalRevenue, todayRevenue, lowStockCount, topProducts });
+    res.json({ totalRevenue, todayRevenue, totalProfit, todayProfit, lowStockCount, topProducts });
   } catch (err: any) {
     console.error("Stats Error:", err);
     res.status(500).json({ error: "Erro ao carregar estatísticas" });

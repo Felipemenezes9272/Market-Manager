@@ -17,6 +17,8 @@ import {
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import ToastContainer from './components/Toast';
+import ConsentBanner from './components/LGPD/ConsentBanner';
+import PrivacyPolicy from './components/LGPD/PrivacyPolicy';
 
 // Pages
 import Login from './pages/Login';
@@ -60,6 +62,14 @@ export default function App() {
   const [inventoryLogs, setInventoryLogs] = useState<any[]>([]);
   const [cashSession, setCashSession] = useState<CashSession | null>(null);
   const [settings, setSettings] = useState<any>({});
+  const [stats, setStats] = useState<any>({
+    todayRevenue: 0,
+    totalPendingBills: 0,
+    lowStockCount: 0,
+    expiryAlertsCount: 0,
+    salesTrend: [],
+    topProducts: []
+  });
   const [toasts, setToasts] = useState<any[]>([]);
 
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
@@ -75,11 +85,24 @@ export default function App() {
       document.documentElement.style.setProperty('--color-amber-600', settings.primary_color);
       document.documentElement.style.setProperty('--color-amber-700', settings.primary_color);
     }
-  }, [settings.theme, settings.primary_color]);
+    
+    // Apply font size
+    const root = document.documentElement;
+    if (settings.font_size) {
+      const sizes: any = { small: '14px', medium: '16px', large: '18px' };
+      root.style.fontSize = sizes[settings.font_size] || '16px';
+    }
+    
+    // Apply interface density
+    if (settings.interface_density) {
+      root.classList.toggle('density-compact', settings.interface_density === 'compact');
+    }
+  }, [settings.theme, settings.primary_color, settings.font_size, settings.interface_density]);
 
   // AI State
   const [aiInsights, setAiInsights] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -118,7 +141,8 @@ export default function App() {
         cashSessionData,
         settingsData,
         logsData,
-        batchesData
+        batchesData,
+        statsData
       ] = await Promise.all([
         apiFetch('/api/products'),
         apiFetch('/api/customers'),
@@ -128,7 +152,8 @@ export default function App() {
         apiFetch('/api/cash-flow/current'),
         apiFetch('/api/settings'),
         apiFetch('/api/inventory-logs'),
-        apiFetch('/api/batches')
+        apiFetch('/api/batches'),
+        apiFetch('/api/dashboard/stats')
       ]);
 
       setProducts(productsData);
@@ -140,6 +165,7 @@ export default function App() {
       setSettings(settingsData);
       setInventoryLogs(logsData);
       setBatches(batchesData);
+      setStats(statsData);
 
       if (user?.is_super_admin) {
         const [tenantsData, usersData] = await Promise.all([
@@ -309,47 +335,50 @@ export default function App() {
     }
   };
 
-  const dashboardStats = {
-    todayRevenue: sales.filter(s => new Date(s.created_at).toDateString() === new Date().toDateString()).reduce((sum, s) => sum + Number(s.total_amount), 0),
-    totalRevenue: bills.filter(b => b.status === 'Pendente').reduce((sum, b) => sum + Number(b.amount), 0),
-    lowStockCount: products.filter(p => p.stock_quantity <= p.min_stock_level).length,
-    topProducts: products.sort((a, b) => b.stock_quantity - a.stock_quantity).slice(0, 5),
-    salesTrend: Array.from({ length: 7 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (6 - i));
-      const daySales = sales.filter(s => new Date(s.created_at).toDateString() === date.toDateString());
-      return {
-        name: date.toLocaleDateString('pt-BR', { weekday: 'short' }),
-        sales: daySales.reduce((sum, s) => sum + Number(s.total_amount), 0)
-      };
-    })
-  };
-
-  const dashboardConfig = settings.dashboard_config || {
-    showSalesToday: true,
-    showPendingBills: true,
-    showLowStock: true,
-    showExpiryAlerts: true
-  };
+  const dashboardConfig = (() => {
+    const defaults = {
+      showSalesToday: true,
+      showProfitToday: true,
+      showPendingBills: true,
+      showLowStock: true,
+      showExpiryAlerts: true
+    };
+    if (!settings.dashboard_config) return defaults;
+    try {
+      const parsed = typeof settings.dashboard_config === 'string' 
+        ? JSON.parse(settings.dashboard_config) 
+        : settings.dashboard_config;
+      return { ...defaults, ...parsed };
+    } catch (e) {
+      return defaults;
+    }
+  })();
 
   return (
     <>
+      <ConsentBanner onShowPolicy={() => setShowPrivacyPolicy(true)} />
+      {showPrivacyPolicy && <PrivacyPolicy onClose={() => setShowPrivacyPolicy(false)} />}
+      
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login onLogin={handleLogin} isLoading={isLoading} />} />
         
         <Route element={<ProtectedRoute user={user} isAuthReady={isAuthReady} />}>
           <Route element={<Layout user={user} onLogout={handleLogout} theme={theme} setTheme={setTheme} />}>
             <Route path="/" element={
-              <DashboardView 
-                stats={dashboardStats} 
-                dashboardConfig={dashboardConfig} 
-                aiInsights={aiInsights} 
-                onAnalyze={analyzeBusiness} 
-                isAnalyzing={isAnalyzing} 
-                cashSession={cashSession}
-                onOpenCash={handleOpenCashSession}
-                onCloseCash={handleCloseCashSession}
-              />
+              user?.is_super_admin ? (
+                <Navigate to="/admin/tenants" replace />
+              ) : (
+                <DashboardView 
+                  stats={stats} 
+                  dashboardConfig={dashboardConfig} 
+                  aiInsights={aiInsights} 
+                  onAnalyze={analyzeBusiness} 
+                  isAnalyzing={isAnalyzing} 
+                  cashSession={cashSession}
+                  onOpenCash={handleOpenCashSession}
+                  onCloseCash={handleCloseCashSession}
+                />
+              )
             } />
             <Route path="/pos" element={<POS products={products} customers={customers} cashSession={cashSession} onCheckout={handleCheckout} onOpenCash={handleOpenCashSession} addToast={addToast} apiFetch={apiFetch} fetchAllData={fetchAllData} settings={settings} />} />
             <Route path="/products" element={<Products products={products} suppliers={suppliers} onAddProduct={crudHandlers.products.add} onUpdateProduct={crudHandlers.products.update} onDeleteProduct={crudHandlers.products.delete} addToast={addToast} />} />
@@ -358,7 +387,18 @@ export default function App() {
             <Route path="/financial" element={<Financial bills={bills} suppliers={suppliers} onAddBill={crudHandlers.bills.add} onPayBill={crudHandlers.bills.pay} onDeleteBill={crudHandlers.bills.delete} addToast={addToast} />} />
             <Route path="/expiry" element={<Expiry batches={batches} products={products} onAddBatch={crudHandlers.batches.add} onDeleteBatch={crudHandlers.batches.delete} addToast={addToast} />} />
             <Route path="/reports" element={<Reports sales={sales} products={products} customers={customers} bills={bills} />} />
-            <Route path="/settings" element={<Settings settings={settings} onUpdateSettings={async (data) => { await apiFetch('/api/settings', { method: 'POST', body: JSON.stringify(data) }); fetchAllData(); }} addToast={addToast} />} />
+            <Route path="/settings" element={
+              <Settings 
+                user={user} 
+                settings={settings} 
+                onUpdateSettings={async (data) => { 
+                  const endpoint = user?.is_super_admin ? '/api/admin/settings' : '/api/settings';
+                  await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(data) }); 
+                  fetchAllData(); 
+                }} 
+                addToast={addToast} 
+              />
+            } />
             <Route path="/inventory" element={<Inventory logs={inventoryLogs} products={products} />} />
             <Route path="/sales" element={<Sales sales={sales} addToast={addToast} />} />
             

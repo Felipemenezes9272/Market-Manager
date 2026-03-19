@@ -38,6 +38,16 @@
   }
 }
 
+.density-compact .px-6 { @apply px-4; }
+.density-compact .py-4 { @apply py-2; }
+.density-compact .p-10 { @apply p-6; }
+.density-compact .gap-8 { @apply gap-4; }
+.density-compact .space-y-8 > :not([hidden]) ~ :not([hidden]) { @apply mt-4; }
+.density-compact .rounded-[3rem] { @apply rounded-3xl; }
+.density-compact .text-3xl { @apply text-xl; }
+.density-compact .p-6 { @apply p-4; }
+.density-compact .rounded-3xl { @apply rounded-2xl; }
+
 @layer components {
   .card {
     background-color: var(--bg-card);

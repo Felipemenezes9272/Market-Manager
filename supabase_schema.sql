@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
     product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
     quantity INTEGER NOT NULL,
     unit_price NUMERIC(10,2) NOT NULL,
+    cost_price NUMERIC(10,2) DEFAULT 0,
     discount NUMERIC(10,2) DEFAULT 0
 );
 
@@ -153,8 +154,10 @@ CREATE TABLE IF NOT EXISTS inventory_logs (
     tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
-    change_amount INTEGER,
-    reason TEXT,
+    type TEXT NOT NULL, -- Entrada, Saída, Ajuste
+    quantity INTEGER NOT NULL,
+    resulting_stock INTEGER NOT NULL,
+    notes TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 

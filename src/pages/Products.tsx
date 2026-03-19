@@ -38,9 +38,46 @@ export default function Products({
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('Todos');
   const [showModal, setShowModal] = useState(false);
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [adjustingProduct, setAdjustingProduct] = useState<any>(null);
 
   const categories = ['Todos', ...Array.from(new Set(products.map(p => p.category)))];
+
+  const handleAdjustStock = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const type = formData.get('type') as string;
+    const quantity = Number(formData.get('quantity'));
+    const notes = formData.get('notes') as string;
+
+    try {
+      const response = await fetch('/api/inventory-logs', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': JSON.parse(localStorage.getItem('user') || '{}').id
+        },
+        body: JSON.stringify({
+          product_id: adjustingProduct.id,
+          type,
+          quantity,
+          notes
+        })
+      });
+
+      if (!response.ok) throw new Error('Erro ao ajustar estoque');
+      
+      addToast("Estoque ajustado com sucesso!", "success");
+      setShowAdjustModal(false);
+      setAdjustingProduct(null);
+      
+      // Trigger data refresh
+      window.dispatchEvent(new CustomEvent('refresh-data'));
+    } catch (err) {
+      addToast("Erro ao ajustar estoque", "error");
+    }
+  };
 
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.barcode?.includes(search);
@@ -130,6 +167,13 @@ export default function Products({
               )}
               <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button 
+                  onClick={() => { setAdjustingProduct(product); setShowAdjustModal(true); }}
+                  className="p-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-xl text-emerald-600 shadow-lg hover:scale-110 transition-transform"
+                  title="Ajustar Estoque"
+                >
+                  <Plus size={18} />
+                </button>
+                <button 
                   onClick={() => { setEditingProduct(product); setShowModal(true); }}
                   className="p-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-xl text-amber-600 shadow-lg hover:scale-110 transition-transform"
                 >
@@ -178,7 +222,11 @@ export default function Products({
                   <Barcode size={14} />
                   <span className="text-xs font-bold">{product.barcode || 'Sem código'}</span>
                 </div>
-                <button className="text-slate-400 hover:text-amber-600 transition-colors">
+                <button 
+                  onClick={() => window.location.href = `/inventory?product=${product.id}`}
+                  className="text-slate-400 hover:text-amber-600 transition-colors"
+                  title="Ver Histórico"
+                >
                   <History size={18} />
                 </button>
               </div>
@@ -264,6 +312,81 @@ export default function Products({
               </form>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Adjust Stock Modal */}
+      <AnimatePresence>
+        {showAdjustModal && adjustingProduct && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white dark:bg-slate-900 rounded-[3rem] max-w-md w-full shadow-2xl overflow-hidden"
+            >
+              <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-white">Ajustar Estoque</h3>
+                  <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">{adjustingProduct.name}</p>
+                </div>
+                <button onClick={() => setShowAdjustModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <form onSubmit={handleAdjustStock} className="p-8 space-y-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Tipo de Ajuste</label>
+                  <select 
+                    name="type"
+                    required
+                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-amber-500 font-bold text-slate-900 dark:text-white appearance-none"
+                  >
+                    <option value="Entrada">Entrada (+)</option>
+                    <option value="Saída">Saída (-)</option>
+                    <option value="Ajuste">Ajuste Direto</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Quantidade</label>
+                  <input 
+                    type="number"
+                    name="quantity"
+                    required
+                    step="0.01"
+                    placeholder="0.00"
+                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-amber-500 font-bold text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Observações</label>
+                  <textarea 
+                    name="notes"
+                    placeholder="Motivo do ajuste..."
+                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-amber-500 font-bold text-slate-900 dark:text-white min-h-[100px]"
+                  />
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <button 
+                    type="button"
+                    onClick={() => setShowAdjustModal(false)}
+                    className="flex-1 px-8 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-black rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    CANCELAR
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 px-8 py-4 bg-amber-600 text-white font-black rounded-2xl hover:bg-amber-700 shadow-lg shadow-amber-600/20 transition-all"
+                  >
+                    CONFIRMAR
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

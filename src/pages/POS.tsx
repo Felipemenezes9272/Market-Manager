@@ -23,6 +23,8 @@ import { cn } from '../utils';
 import { Product, Customer, CashSession } from '../types';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
+import ConfirmationModal from '../components/ConfirmationModal';
+
 interface POSProps {
   products: Product[];
   customers: Customer[];
@@ -47,10 +49,51 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastSale, setLastSale] = useState<any>(null);
   const [showOpenCashModal, setShowOpenCashModal] = useState(false);
+  const [showConfirmCancel, setShowConfirmCancel] = useState(false);
   const [initialCashValue, setInitialCashValue] = useState('0');
   const [payments, setPayments] = useState<{ method: string, amount: number }[]>([]);
   const [editingSale, setEditingSale] = useState<any>(null);
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus search field
+  useEffect(() => {
+    if (settings?.pos_auto_focus === 'true' && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [settings?.pos_auto_focus, isCheckoutOpen, isScannerOpen, showSuccessModal]);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    if (settings?.pos_shortcuts_enabled !== 'true') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setCart([]);
+        setSelectedCustomer(null);
+        setDiscount(0);
+        setPayments([]);
+        setEditingSale(null);
+        addToast("Nova venda iniciada", "info");
+      }
+      if (e.key === 'F2') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (e.key === 'F3') {
+        e.preventDefault();
+        if (cart.length > 0) setIsCheckoutOpen(true);
+      }
+      if (e.key === 'F4') {
+        e.preventDefault();
+        setIsScannerOpen(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [settings?.pos_shortcuts_enabled, cart.length, addToast]);
 
   const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -200,6 +243,21 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
           customer: selectedCustomer,
           date: new Date()
         });
+        
+        // Auto print if enabled
+        if (settings?.pos_auto_print === 'true') {
+          handlePrintReceipt({
+            id: result.saleId,
+            items: [...cart],
+            total: finalTotal,
+            discount,
+            subtotal,
+            payments: [...payments],
+            customer: selectedCustomer,
+            date: new Date()
+          });
+        }
+        
         setShowSuccessModal(true);
       }
       setCart([]);
@@ -338,7 +396,19 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
   const addPayment = (method: string) => {
     const remaining = finalTotal - payments.reduce((sum, p) => sum + p.amount, 0);
     if (remaining <= 0) return;
-    setPayments([...payments, { method, amount: remaining }]);
+    const newPayments = [...payments, { method, amount: remaining }];
+    setPayments(newPayments);
+    
+    // Auto finalize if enabled
+    if (settings?.pos_auto_finalize === 'true') {
+      const totalPaid = newPayments.reduce((sum, p) => sum + p.amount, 0);
+      if (Math.abs(totalPaid - finalTotal) < 0.01) {
+        // Small delay to let the user see the payment added
+        setTimeout(() => {
+          handleCheckout();
+        }, 300);
+      }
+    }
   };
 
   const removePayment = (index: number) => {
@@ -434,6 +504,7 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
           <div className="flex-1 relative group">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-amber-600 transition-colors" size={20} />
             <input 
+              ref={searchInputRef}
               type="text" 
               placeholder="Buscar por nome ou código de barras..." 
               className="w-full pl-12 pr-4 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl outline-none font-bold text-slate-700 dark:text-white focus:ring-2 ring-amber-500/20 transition-all"
@@ -601,6 +672,14 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
                 <div className="text-center">
                   <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Total a Pagar</span>
                   <div className="text-5xl font-black text-slate-900 dark:text-white mt-2">R$ {finalTotal.toFixed(2)}</div>
+                  {settings?.pos_show_change === 'true' && payments.reduce((s, p) => s + p.amount, 0) > finalTotal && (
+                    <div className="mt-4 p-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl border border-emerald-100 dark:border-emerald-500/20">
+                      <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Troco</span>
+                      <div className="text-3xl font-black text-emerald-600">
+                        R$ {(payments.reduce((s, p) => s + p.amount, 0) - finalTotal).toFixed(2)}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {payments.length > 0 && (
@@ -665,9 +744,13 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
                   </button>
                   <button 
                     onClick={() => {
-                      setIsCheckoutOpen(false);
-                      setEditingSale(null);
-                      setPayments([]);
+                      if (settings?.pos_confirm_cancel === 'true') {
+                        setShowConfirmCancel(true);
+                      } else {
+                        setIsCheckoutOpen(false);
+                        setEditingSale(null);
+                        setPayments([]);
+                      }
                     }}
                     className="w-full py-4 text-slate-400 font-black hover:text-slate-600 transition-colors uppercase text-xs tracking-widest"
                   >
@@ -679,6 +762,21 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmationModal
+        isOpen={showConfirmCancel}
+        onClose={() => setShowConfirmCancel(false)}
+        onConfirm={() => {
+          setIsCheckoutOpen(false);
+          setEditingSale(null);
+          setPayments([]);
+        }}
+        title="Cancelar Operação?"
+        message="Tem certeza que deseja cancelar esta operação? Todos os dados não salvos serão perdidos."
+        confirmText="SIM, CANCELAR"
+        cancelText="NÃO, VOLTAR"
+        type="danger"
+      />
 
       {/* Success Modal */}
       <AnimatePresence>

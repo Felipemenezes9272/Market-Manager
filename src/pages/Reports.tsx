@@ -30,6 +30,20 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
   const [selectedReport, setSelectedReport] = useState<any | null>(null);
   const [dateRange, setDateRange] = useState('month');
 
+  const filterDataByDate = (data: any[]) => {
+    const now = new Date();
+    const rangeDate = new Date();
+    
+    if (dateRange === 'week') rangeDate.setDate(now.getDate() - 7);
+    else if (dateRange === 'month') rangeDate.setMonth(now.getMonth() - 1);
+    else if (dateRange === 'year') rangeDate.setFullYear(now.getFullYear() - 1);
+    
+    return data.filter(item => {
+      const itemDate = new Date(item.created_at || item.due_date || now);
+      return itemDate >= rangeDate;
+    });
+  };
+
   const formatPaymentMethod = (method: any) => {
     if (!method) return '-';
     
@@ -68,8 +82,9 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
       description: 'Análise detalhada de faturamento, ticket médio e produtos mais vendidos.',
       icon: DollarSign,
       color: 'bg-emerald-100 text-emerald-600',
-      stats: 'R$ ' + sales.reduce((sum, s) => sum + Number(s.total_amount), 0).toFixed(2),
-      data: sales
+      stats: 'R$ ' + filterDataByDate(sales).reduce((sum, s) => sum + Number(s.total_amount), 0).toFixed(2),
+      profit: 'Lucro: R$ ' + filterDataByDate(sales).reduce((sum, s) => sum + Number(s.profit || 0), 0).toFixed(2),
+      data: filterDataByDate(sales)
     },
     {
       id: 'inventory',
@@ -95,10 +110,58 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
       description: 'Fluxo de caixa, contas pagas vs pendentes e análise de despesas.',
       icon: FileText,
       color: 'bg-rose-100 text-rose-600',
-      stats: bills.length + ' lançamentos',
-      data: bills
+      stats: filterDataByDate(bills).length + ' lançamentos',
+      data: filterDataByDate(bills)
+    },
+    {
+      id: 'custom',
+      title: 'Relatório Customizado',
+      description: 'Crie seu próprio relatório selecionando as colunas e filtros desejados.',
+      icon: Filter,
+      color: 'bg-slate-100 text-slate-600',
+      stats: 'Construtor Ativo',
+      data: []
     }
   ];
+
+  const [customConfig, setCustomConfig] = useState<any>({
+    entity: 'sales',
+    fields: ['created_at', 'customer_name', 'total_amount']
+  });
+
+  const availableFields: any = {
+    sales: [
+      { id: 'created_at', label: 'Data' },
+      { id: 'customer_name', label: 'Cliente' },
+      { id: 'payment_method', label: 'Pagamento' },
+      { id: 'total_amount', label: 'Total' },
+      { id: 'profit', label: 'Lucro' },
+      { id: 'discount', label: 'Desconto' }
+    ],
+    products: [
+      { id: 'name', label: 'Nome' },
+      { id: 'sku', label: 'SKU' },
+      { id: 'stock_quantity', label: 'Estoque' },
+      { id: 'price', label: 'Preço' },
+      { id: 'cost_price', label: 'Custo' },
+      { id: 'category', label: 'Categoria' }
+    ],
+    customers: [
+      { id: 'name', label: 'Nome' },
+      { id: 'email', label: 'Email' },
+      { id: 'phone', label: 'Telefone' },
+      { id: 'address', label: 'Endereço' },
+      { id: 'created_at', label: 'Cadastro' }
+    ]
+  };
+
+  const getCustomData = () => {
+    let baseData = [];
+    if (customConfig.entity === 'sales') baseData = filterDataByDate(sales);
+    else if (customConfig.entity === 'products') baseData = products;
+    else if (customConfig.entity === 'customers') baseData = customers;
+    return baseData;
+  };
 
   const generatePDF = (report: any) => {
     const doc = new jsPDF();
@@ -110,23 +173,24 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
     doc.text(`Gerado em: ${date}`, 14, 30);
 
     if (report.id === 'sales') {
-      const tableData = sales.map(s => {
+      const tableData = report.data.map((s: any) => {
         const date = new Date(s.created_at);
         return [
           date.toLocaleDateString(),
           date.toLocaleTimeString(),
           s.customer_name || 'Consumidor',
           formatPaymentMethod(s.payment_method),
-          `R$ ${Number(s.total_amount).toFixed(2)}`
+          `R$ ${Number(s.total_amount).toFixed(2)}`,
+          `R$ ${Number(s.profit || 0).toFixed(2)}`
         ];
       });
       autoTable(doc, {
         startY: 40,
-        head: [['Data', 'Horário', 'Cliente', 'Pagamento', 'Total']],
+        head: [['Data', 'Horário', 'Cliente', 'Pagamento', 'Total', 'Lucro']],
         body: tableData,
       });
     } else if (report.id === 'inventory') {
-      const tableData = products.map(p => [
+      const tableData = report.data.map((p: any) => [
         p.name,
         p.sku || '-',
         p.stock_quantity,
@@ -138,7 +202,7 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
         body: tableData,
       });
     } else if (report.id === 'customers') {
-      const tableData = customers.map(c => [
+      const tableData = report.data.map((c: any) => [
         c.name,
         c.email || '-',
         c.phone || '-',
@@ -150,7 +214,7 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
         body: tableData,
       });
     } else if (report.id === 'financial') {
-      const tableData = bills.map(b => [
+      const tableData = report.data.map((b: any) => [
         b.description,
         b.supplier_name || '-',
         new Date(b.due_date).toLocaleDateString(),
@@ -160,6 +224,23 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
       autoTable(doc, {
         startY: 40,
         head: [['Descrição', 'Fornecedor', 'Vencimento', 'Valor', 'Status']],
+        body: tableData,
+      });
+    } else if (report.id === 'custom') {
+      const data = getCustomData();
+      const fields = availableFields[customConfig.entity].filter((f: any) => customConfig.fields.includes(f.id));
+      const tableData = data.map((item: any) => {
+        return fields.map((f: any) => {
+          const val = item[f.id];
+          if (f.id === 'created_at' || f.id === 'due_date') return new Date(val).toLocaleDateString();
+          if (f.id === 'total_amount' || f.id === 'price' || f.id === 'cost_price' || f.id === 'profit' || f.id === 'amount') return `R$ ${Number(val || 0).toFixed(2)}`;
+          if (f.id === 'payment_method') return formatPaymentMethod(val);
+          return val || '-';
+        });
+      });
+      autoTable(doc, {
+        startY: 40,
+        head: [fields.map((f: any) => f.label)],
         body: tableData,
       });
     }
@@ -210,6 +291,9 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
               <div className="text-right">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Resumo Atual</p>
                 <p className="text-xl font-black text-slate-900 dark:text-white">{report.stats}</p>
+                {report.profit && (
+                  <p className="text-xs font-bold text-emerald-600 mt-1">{report.profit}</p>
+                )}
               </div>
             </div>
 
@@ -263,6 +347,49 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
                 </button>
               </div>
 
+              {selectedReport.id === 'custom' && (
+                <div className="p-8 bg-slate-50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Entidade</label>
+                      <select 
+                        value={customConfig.entity}
+                        onChange={(e) => setCustomConfig({ ...customConfig, entity: e.target.value, fields: availableFields[e.target.value].slice(0, 3).map((f: any) => f.id) })}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 font-bold"
+                      >
+                        <option value="sales">Vendas</option>
+                        <option value="products">Produtos</option>
+                        <option value="customers">Clientes</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Colunas</label>
+                      <div className="flex flex-wrap gap-2">
+                        {availableFields[customConfig.entity].map((f: any) => (
+                          <button
+                            key={f.id}
+                            onClick={() => {
+                              const newFields = customConfig.fields.includes(f.id)
+                                ? customConfig.fields.filter((id: string) => id !== f.id)
+                                : [...customConfig.fields, f.id];
+                              setCustomConfig({ ...customConfig, fields: newFields });
+                            }}
+                            className={cn(
+                              "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border",
+                              customConfig.fields.includes(f.id)
+                                ? "bg-amber-600 border-amber-600 text-white shadow-lg shadow-amber-600/20"
+                                : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500"
+                            )}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex-1 overflow-auto p-8">
                 <table className="w-full">
                   <thead>
@@ -274,6 +401,7 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
                           <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Cliente</th>
                           <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">Pagamento</th>
                           <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400 text-right">Total</th>
+                          <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400 text-right">Lucro</th>
                         </>
                       )}
                       {selectedReport.id === 'inventory' && (
@@ -300,10 +428,17 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
                           <th className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400 text-right">Status</th>
                         </>
                       )}
+                      {selectedReport.id === 'custom' && (
+                        <>
+                          {availableFields[customConfig.entity].filter((f: any) => customConfig.fields.includes(f.id)).map((f: any) => (
+                            <th key={f.id} className="pb-4 font-black uppercase text-[10px] tracking-widest text-slate-400">{f.label}</th>
+                          ))}
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                    {selectedReport.data.map((item: any, idx: number) => (
+                    {(selectedReport.id === 'custom' ? getCustomData() : selectedReport.data).map((item: any, idx: number) => (
                       <tr key={idx} className="group">
                         {selectedReport.id === 'sales' && (
                           <>
@@ -311,7 +446,8 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
                             <td className="py-4 font-bold text-slate-600 dark:text-slate-400">{new Date(item.created_at).toLocaleTimeString()}</td>
                             <td className="py-4 font-black text-slate-900 dark:text-white">{item.customer_name || 'Consumidor'}</td>
                             <td className="py-4 font-bold text-slate-500 uppercase text-xs tracking-wider">{formatPaymentMethod(item.payment_method)}</td>
-                            <td className="py-4 text-right font-black text-emerald-600">R$ {Number(item.total_amount).toFixed(2)}</td>
+                            <td className="py-4 text-right font-black text-slate-900 dark:text-white">R$ {Number(item.total_amount).toFixed(2)}</td>
+                            <td className="py-4 text-right font-black text-emerald-600">R$ {Number(item.profit || 0).toFixed(2)}</td>
                           </>
                         )}
                         {selectedReport.id === 'inventory' && (
@@ -343,6 +479,23 @@ export default function Reports({ sales, products, customers, bills }: ReportsPr
                                 {item.status === 'Pago' ? 'Pago' : 'Pendente'}
                               </span>
                             </td>
+                          </>
+                        )}
+                        {selectedReport.id === 'custom' && (
+                          <>
+                            {availableFields[customConfig.entity].filter((f: any) => customConfig.fields.includes(f.id)).map((f: any) => {
+                              const val = item[f.id];
+                              let displayVal = val || '-';
+                              if (f.id === 'created_at' || f.id === 'due_date') displayVal = new Date(val).toLocaleDateString();
+                              if (f.id === 'total_amount' || f.id === 'price' || f.id === 'cost_price' || f.id === 'profit' || f.id === 'amount') displayVal = `R$ ${Number(val || 0).toFixed(2)}`;
+                              if (f.id === 'payment_method') displayVal = formatPaymentMethod(val);
+                              
+                              return (
+                                <td key={f.id} className="py-4 font-bold text-slate-600 dark:text-slate-400">
+                                  {displayVal}
+                                </td>
+                              );
+                            })}
                           </>
                         )}
                       </tr>

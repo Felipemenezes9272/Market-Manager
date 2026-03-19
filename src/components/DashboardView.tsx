@@ -50,23 +50,31 @@ export default function DashboardView({
     { 
       id: 'showSalesToday', 
       label: 'Vendas Hoje', 
-      value: `R$ ${stats.todayRevenue.toFixed(2)}`, 
+      value: `R$ ${(stats?.todayRevenue || 0).toFixed(2)}`, 
       icon: DollarSign, 
       color: 'bg-emerald-500', 
       trend: '+12.5%' 
     },
     { 
+      id: 'showProfitToday', 
+      label: 'Lucro Hoje', 
+      value: `R$ ${(stats?.todayProfit || 0).toFixed(2)}`, 
+      icon: TrendingUp, 
+      color: 'bg-emerald-600', 
+      trend: 'margem bruta' 
+    },
+    { 
       id: 'showPendingBills', 
       label: 'Contas a Pagar', 
-      value: `R$ ${stats.totalRevenue.toFixed(2)}`, 
+      value: `R$ ${(stats?.totalPendingBills || 0).toFixed(2)}`, 
       icon: TrendingUp, 
       color: 'bg-rose-500', 
-      trend: '3 pendentes' 
+      trend: 'pendentes' 
     },
     { 
       id: 'showLowStock', 
       label: 'Estoque Baixo', 
-      value: `${stats.lowStockCount} itens`, 
+      value: `${stats?.lowStockCount || 0} itens`, 
       icon: Package, 
       color: 'bg-amber-500', 
       trend: 'Reposição necessária' 
@@ -74,7 +82,7 @@ export default function DashboardView({
     { 
       id: 'showExpiryAlerts', 
       label: 'Vencimento Próximo', 
-      value: '5 lotes', 
+      value: `${stats?.expiryAlertsCount || 0} lotes`, 
       icon: AlertTriangle, 
       color: 'bg-orange-500', 
       trend: 'Próximos 30 dias' 
@@ -162,7 +170,7 @@ export default function DashboardView({
           </div>
           <div className="h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={stats.salesTrend}>
+              <AreaChart data={stats?.salesTrend || []}>
                 <defs>
                   <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#d97706" stopOpacity={0.3}/>
@@ -185,7 +193,7 @@ export default function DashboardView({
         <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-slate-800 shadow-sm">
           <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight mb-8">Top Produtos</h3>
           <div className="space-y-6">
-            {stats.topProducts.map((product: any, i: number) => (
+            {(stats?.topProducts || []).map((product: any, i: number) => (
               <div key={i} className="flex items-center gap-4 group cursor-pointer">
                 <div className="w-12 h-12 bg-slate-50 dark:bg-slate-800 rounded-2xl flex items-center justify-center font-black text-slate-400 group-hover:bg-amber-500 group-hover:text-white transition-all">
                   0{i + 1}

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   History, 
   ArrowUpRight, 
@@ -14,6 +15,8 @@ import {
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { cn } from '../utils';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface InventoryProps {
   logs: any[];
@@ -21,14 +24,50 @@ interface InventoryProps {
 }
 
 export default function Inventory({ logs, products }: InventoryProps) {
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('Todos');
+
+  useEffect(() => {
+    const productId = searchParams.get('product');
+    if (productId && products.length > 0) {
+      const product = products.find(p => p.id === Number(productId));
+      if (product) {
+        setSearch(product.name);
+      }
+    }
+  }, [searchParams, products]);
 
   const filteredLogs = logs.filter(log => {
     const matchesSearch = log.product_name?.toLowerCase().includes(search.toLowerCase()) || log.notes?.toLowerCase().includes(search.toLowerCase());
     const matchesType = typeFilter === 'Todos' || log.type === typeFilter;
     return matchesSearch && matchesType;
   });
+
+  const exportLogs = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(20);
+    doc.text('Histórico de Movimentação de Estoque', 14, 22);
+    doc.setFontSize(10);
+    doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 14, 30);
+
+    const tableData = filteredLogs.map(log => [
+      format(new Date(log.created_at), 'dd/MM/yy HH:mm'),
+      log.product_name,
+      log.type,
+      log.quantity,
+      log.resulting_stock,
+      log.notes || '-'
+    ]);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Data/Hora', 'Produto', 'Tipo', 'Qtd', 'Estoque Final', 'Observação']],
+      body: tableData,
+    });
+
+    doc.save(`inventory-logs-${new Date().getTime()}.pdf`);
+  };
 
   const getProductStock = (id: number) => products.find(p => p.id === id)?.stock_quantity || 0;
 
@@ -39,7 +78,10 @@ export default function Inventory({ logs, products }: InventoryProps) {
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Histórico de Movimentação</h2>
           <p className="text-slate-500 font-medium mt-1">Rastreie todas as entradas e saídas do seu estoque.</p>
         </div>
-        <button className="bg-white dark:bg-slate-900 text-slate-700 dark:text-white px-8 py-4 rounded-2xl font-black border border-slate-200 dark:border-slate-800 flex items-center gap-3 hover:bg-slate-50 transition-all">
+        <button 
+          onClick={exportLogs}
+          className="bg-white dark:bg-slate-900 text-slate-700 dark:text-white px-8 py-4 rounded-2xl font-black border border-slate-200 dark:border-slate-800 flex items-center gap-3 hover:bg-slate-50 transition-all"
+        >
           <Download size={20} /> EXPORTAR LOGS
         </button>
       </div>

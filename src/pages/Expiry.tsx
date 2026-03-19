@@ -14,6 +14,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, isBefore, addDays, parseISO } from 'date-fns';
 import { cn } from '../utils';
+import ConfirmationModal from '../components/ConfirmationModal';
 
 interface ExpiryProps {
   batches: any[];
@@ -26,6 +27,8 @@ interface ExpiryProps {
 export default function Expiry({ batches, products, onAddBatch, onDeleteBatch, addToast }: ExpiryProps) {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [batchToDelete, setBatchToDelete] = useState<number | null>(null);
 
   const filteredBatches = batches.filter(b => 
     b.product_name?.toLowerCase().includes(search.toLowerCase())
@@ -54,6 +57,20 @@ export default function Expiry({ batches, products, onAddBatch, onDeleteBatch, a
       setShowModal(false);
     } catch (err) {
       addToast("Erro ao salvar lote", "error");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!batchToDelete) return;
+    
+    try {
+      await onDeleteBatch(batchToDelete);
+      addToast("Lote excluído com sucesso!", "success");
+    } catch (err) {
+      addToast("Erro ao excluir lote", "error");
+    } finally {
+      setShowConfirmDelete(false);
+      setBatchToDelete(null);
     }
   };
 
@@ -130,7 +147,7 @@ export default function Expiry({ batches, products, onAddBatch, onDeleteBatch, a
                     </td>
                     <td className="px-8 py-6">
                       <button 
-                        onClick={() => onDeleteBatch(batch.id)}
+                        onClick={() => { setBatchToDelete(batch.id); setShowConfirmDelete(true); }}
                         className="p-2 text-slate-400 hover:text-rose-600 transition-colors opacity-0 group-hover:opacity-100"
                       >
                         <Trash2 size={18} />
@@ -196,6 +213,16 @@ export default function Expiry({ batches, products, onAddBatch, onDeleteBatch, a
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ConfirmationModal
+        isOpen={showConfirmDelete}
+        onClose={() => { setShowConfirmDelete(false); setBatchToDelete(null); }}
+        onConfirm={handleDelete}
+        title="Excluir Lote"
+        message="Tem certeza que deseja excluir este lote? Isso irá subtrair a quantidade do estoque do produto."
+        confirmText="EXCLUIR"
+        type="danger"
+      />
     </div>
   );
 }
