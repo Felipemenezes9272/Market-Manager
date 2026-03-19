@@ -76,26 +76,44 @@ export default function App() {
     return (localStorage.getItem('theme') as any) || 'system';
   });
 
+  const handleUpdateTheme = async (newTheme: 'light' | 'dark' | 'system') => {
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    if (user) {
+      try {
+        const endpoint = user.is_super_admin ? '/api/admin/settings' : '/api/settings';
+        await apiFetch(endpoint, { 
+          method: 'POST', 
+          body: JSON.stringify({ theme: newTheme }) 
+        });
+        setSettings((prev: any) => ({ ...prev, theme: newTheme }));
+      } catch (err) {
+        console.error('Failed to save theme setting:', err);
+      }
+    }
+  };
+
   // Sync theme with settings
   useEffect(() => {
-    if (settings.theme) {
+    if (settings.theme && settings.theme !== theme) {
       setTheme(settings.theme);
     }
     if (settings.primary_color) {
-      document.documentElement.style.setProperty('--color-amber-600', settings.primary_color);
-      document.documentElement.style.setProperty('--color-amber-700', settings.primary_color);
+      document.documentElement.style.setProperty('--primary-color', settings.primary_color);
+      // Generate a slightly darker color for hover
+      const hoverColor = settings.primary_color + 'dd'; // Simple alpha-based hover
+      document.documentElement.style.setProperty('--primary-hover', hoverColor);
     }
     
     // Apply font size
-    const root = document.documentElement;
     if (settings.font_size) {
       const sizes: any = { small: '14px', medium: '16px', large: '18px' };
-      root.style.fontSize = sizes[settings.font_size] || '16px';
+      document.documentElement.style.setProperty('--font-base-size', sizes[settings.font_size] || '16px');
     }
     
     // Apply interface density
     if (settings.interface_density) {
-      root.classList.toggle('density-compact', settings.interface_density === 'compact');
+      document.documentElement.classList.toggle('density-compact', settings.interface_density === 'compact');
     }
   }, [settings.theme, settings.primary_color, settings.font_size, settings.interface_density]);
 
@@ -363,7 +381,7 @@ export default function App() {
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login onLogin={handleLogin} isLoading={isLoading} />} />
         
         <Route element={<ProtectedRoute user={user} isAuthReady={isAuthReady} />}>
-          <Route element={<Layout user={user} onLogout={handleLogout} theme={theme} setTheme={setTheme} />}>
+          <Route element={<Layout user={user} onLogout={handleLogout} theme={theme} setTheme={handleUpdateTheme} />}>
             <Route path="/" element={
               user?.is_super_admin ? (
                 <Navigate to="/admin/tenants" replace />
@@ -391,6 +409,8 @@ export default function App() {
               <Settings 
                 user={user} 
                 settings={settings} 
+                theme={theme}
+                setTheme={handleUpdateTheme}
                 onUpdateSettings={async (data) => { 
                   const endpoint = user?.is_super_admin ? '/api/admin/settings' : '/api/settings';
                   await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(data) }); 

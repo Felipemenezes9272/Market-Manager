@@ -143,9 +143,10 @@ CREATE TABLE IF NOT EXISTS cash_flow (
 CREATE TABLE IF NOT EXISTS settings (
     id SERIAL PRIMARY KEY,
     tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES app_users(id) ON DELETE CASCADE,
     key TEXT NOT NULL,
     value TEXT,
-    UNIQUE(tenant_id, key)
+    UNIQUE(tenant_id, user_id, key)
 );
 
 -- 11. Inventory Logs Table

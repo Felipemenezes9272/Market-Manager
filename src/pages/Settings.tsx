@@ -22,14 +22,16 @@ import ConfirmationModal from '../components/ConfirmationModal';
 interface SettingsProps {
   user: any;
   settings: any;
+  theme: 'light' | 'dark' | 'system';
+  setTheme: (theme: 'light' | 'dark' | 'system') => void;
   onUpdateSettings: (data: any) => Promise<void>;
   addToast: (msg: string, type?: any) => void;
 }
 
-export default function Settings({ user, settings, onUpdateSettings, addToast }: SettingsProps) {
+export default function Settings({ user, settings, theme, setTheme, onUpdateSettings, addToast }: SettingsProps) {
   const isSuperAdmin = user?.is_super_admin;
   const [activeTab, setActiveTab] = useState(isSuperAdmin ? 'saas' : 'general');
-  const [selectedTheme, setSelectedTheme] = useState(settings?.theme || 'system');
+  const [selectedTheme, setSelectedTheme] = useState(settings?.theme || theme || 'system');
   const [selectedColor, setSelectedColor] = useState(settings?.primary_color || '#d97706');
   const [selectedFontSize, setSelectedFontSize] = useState(settings?.font_size || 'medium');
   const [selectedDensity, setSelectedDensity] = useState(settings?.interface_density || 'comfortable');
@@ -41,6 +43,23 @@ export default function Settings({ user, settings, onUpdateSettings, addToast }:
     showLowStock: true,
     showExpiryAlerts: true
   });
+
+  // Sync local state with props when they change
+  React.useEffect(() => {
+    if (settings?.theme) setSelectedTheme(settings.theme);
+    if (settings?.primary_color) setSelectedColor(settings.primary_color);
+    if (settings?.font_size) setSelectedFontSize(settings.font_size);
+    if (settings?.interface_density) setSelectedDensity(settings.interface_density);
+    if (settings?.dashboard_config) {
+      try {
+        setDashboardConfig(typeof settings.dashboard_config === 'string' 
+          ? JSON.parse(settings.dashboard_config) 
+          : settings.dashboard_config);
+      } catch (e) {
+        console.error("Failed to parse dashboard config", e);
+      }
+    }
+  }, [settings]);
 
   const storeTabs = [
     { id: 'general', label: 'Geral', icon: Store },
@@ -303,18 +322,21 @@ export default function Settings({ user, settings, onUpdateSettings, addToast }:
                         { id: 'light', label: 'Claro', icon: Sun },
                         { id: 'dark', label: 'Escuro', icon: Moon },
                         { id: 'system', label: 'Sistema', icon: Monitor }
-                      ].map((theme) => (
+                      ].map((themeOption) => (
                         <button
-                          key={theme.id}
+                          key={themeOption.id}
                           type="button"
-                          onClick={() => setSelectedTheme(theme.id)}
+                          onClick={() => {
+                            setSelectedTheme(themeOption.id as any);
+                            setTheme(themeOption.id as any);
+                          }}
                           className={cn(
                             "flex flex-col items-center gap-3 p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl border-2 transition-all",
-                            selectedTheme === theme.id ? "border-amber-500 bg-amber-50 dark:bg-amber-500/10" : "border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                            selectedTheme === themeOption.id ? "border-amber-500 bg-amber-50 dark:bg-amber-500/10" : "border-transparent hover:border-slate-200 dark:hover:border-slate-700"
                           )}
                         >
-                          <theme.icon size={24} className={cn(selectedTheme === theme.id ? "text-amber-600" : "text-slate-400")} />
-                          <span className={cn("font-bold text-sm", selectedTheme === theme.id ? "text-amber-600" : "text-slate-500")}>{theme.label}</span>
+                          <themeOption.icon size={24} className={cn(selectedTheme === themeOption.id ? "text-amber-600" : "text-slate-400")} />
+                          <span className={cn("font-bold text-sm", selectedTheme === themeOption.id ? "text-amber-600" : "text-slate-500")}>{themeOption.label}</span>
                         </button>
                       ))}
                     </div>
@@ -326,7 +348,11 @@ export default function Settings({ user, settings, onUpdateSettings, addToast }:
                         <button
                           key={color}
                           type="button"
-                          onClick={() => setSelectedColor(color)}
+                          onClick={() => {
+                            setSelectedColor(color);
+                            document.documentElement.style.setProperty('--primary-color', color);
+                            document.documentElement.style.setProperty('--primary-hover', color + 'dd');
+                          }}
                           style={{ backgroundColor: color }}
                           className={cn(
                             "w-12 h-12 rounded-full border-4 shadow-lg hover:scale-110 transition-transform",
@@ -345,7 +371,11 @@ export default function Settings({ user, settings, onUpdateSettings, addToast }:
                           <button
                             key={size}
                             type="button"
-                            onClick={() => setSelectedFontSize(size)}
+                            onClick={() => {
+                              setSelectedFontSize(size);
+                              const sizes: any = { small: '14px', medium: '16px', large: '18px' };
+                              document.documentElement.style.setProperty('--font-base-size', sizes[size]);
+                            }}
                             className={cn(
                               "flex-1 py-3 px-4 rounded-xl font-bold text-sm transition-all border-2",
                               selectedFontSize === size 
@@ -366,7 +396,10 @@ export default function Settings({ user, settings, onUpdateSettings, addToast }:
                           <button
                             key={density}
                             type="button"
-                            onClick={() => setSelectedDensity(density)}
+                            onClick={() => {
+                              setSelectedDensity(density);
+                              document.documentElement.classList.toggle('density-compact', density === 'compact');
+                            }}
                             className={cn(
                               "flex-1 py-3 px-4 rounded-xl font-bold text-sm transition-all border-2",
                               selectedDensity === density 

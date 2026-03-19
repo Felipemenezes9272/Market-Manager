@@ -50,12 +50,13 @@ app.use("/api", async (req, res, next) => {
     return next();
   }
   
-  const userId = req.headers['x-user-id'];
-  if (!userId || userId === 'null' || userId === 'undefined') {
-    console.warn(`Auth Middleware: Invalid x-user-id header (${userId}) for path ${req.path}`);
+  const userIdHeader = req.headers['x-user-id'];
+  if (!userIdHeader || userIdHeader === 'null' || userIdHeader === 'undefined') {
+    console.warn(`Auth Middleware: Invalid x-user-id header (${userIdHeader}) for path ${req.path}`);
     return res.status(401).json({ error: "Usuário não autenticado" });
   }
   
+  const userId = Number(userIdHeader);
   const { data: user, error: userErr } = await supabase.from('app_users').select('tenant_id, is_super_admin').eq('id', userId).single();
   
   if (userErr || !user) {
@@ -549,15 +550,15 @@ app.get("/api/dashboard/stats", async (req, res) => {
 
     // 7. Today's Profit
     let profitQuery = supabase.from("sale_items")
-      .select("quantity, unit_price, cost_price, discount")
+      .select("quantity, unit_price, discount, products(cost_price)")
       .gte("created_at", todayISO);
     
     if (tenant_id) profitQuery = profitQuery.eq("tenant_id", tenant_id);
     
     const { data: todayItems } = await profitQuery;
-    const todayProfit = todayItems?.reduce((sum, item) => {
+    const todayProfit = todayItems?.reduce((sum, item: any) => {
       const revenue = (Number(item.unit_price) - Number(item.discount)) * Number(item.quantity);
-      const cost = Number(item.cost_price || 0) * Number(item.quantity);
+      const cost = Number(item.products?.cost_price || 0) * Number(item.quantity);
       return sum + (revenue - cost);
     }, 0) || 0;
 
@@ -618,25 +619,26 @@ app.post("/api/admin/settings", async (req, res) => {
 // Settings
 app.get("/api/settings", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const userId = req.headers['x-user-id'];
+  const userIdHeader = req.headers['x-user-id'];
+  const userId = userIdHeader ? Number(userIdHeader) : null;
   
   if (!tenant_id && !isSuperAdmin(req)) {
     return res.json({});
   }
 
   let tenantQuery = supabase.from("settings").select("*").is("user_id", null);
-  let userQuery = supabase.from("settings").select("*").eq("user_id", userId);
+  let userQuery = userId ? supabase.from("settings").select("*").eq("user_id", userId) : null;
 
   if (tenant_id) {
     tenantQuery = tenantQuery.eq("tenant_id", tenant_id);
-    userQuery = userQuery.eq("tenant_id", tenant_id);
+    if (userQuery) userQuery = userQuery.eq("tenant_id", tenant_id);
   }
 
   // Get tenant settings
   const { data: tenantSettings } = await tenantQuery;
   
   // Get user specific settings (preferences)
-  const { data: userSettings } = await userQuery;
+  const { data: userSettings } = userQuery ? await userQuery : { data: [] };
   
   const settingsObj = [...(tenantSettings || []), ...(userSettings || [])].reduce((acc: any, curr: any) => { 
     acc[curr.key] = curr.value; 
@@ -648,7 +650,8 @@ app.get("/api/settings", async (req, res) => {
 
 app.post("/api/settings", async (req, res) => {
   const tenant_id = getTenantId(req);
-  const userId = req.headers['x-user-id'];
+  const userIdHeader = req.headers['x-user-id'];
+  const userId = userIdHeader ? Number(userIdHeader) : null;
   const settings = req.body;
   
   try {
@@ -666,7 +669,7 @@ app.post("/api/settings", async (req, res) => {
         .eq("tenant_id", tenant_id)
         .eq("key", key);
       
-      if (isUserSpecific) {
+      if (isUserSpecific && userId) {
         query.eq("user_id", userId);
       } else {
         query.is("user_id", null);
@@ -1042,7 +1045,7 @@ app.post("/api/inventory-logs", async (req, res) => {
 // Sales
 app.get("/api/sales", async (req, res) => {
   const tenant_id = getTenantId(req);
-  let query = supabase.from("sales").select("*, customers(name), sale_items(quantity, cost_price)");
+  let query = supabase.from("sales").select("*, customers(name), sale_items(quantity, products(cost_price))");
   
   if (tenant_id) {
     query = query.eq("tenant_id", tenant_id);
@@ -1054,7 +1057,7 @@ app.get("/api/sales", async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
   const sales = data?.map((s: any) => {
     const totalCost = s.sale_items?.reduce((sum: number, item: any) => {
-      const cost = Number(item.cost_price || 0);
+      const cost = Number(item.products?.cost_price || 0);
       return sum + (cost * Number(item.quantity || 0));
     }, 0) || 0;
     return { 
@@ -1071,8 +1074,12 @@ app.get("/api/sales/:id", async (req, res) => {
   const tenant_id = getTenantId(req);
   const { data: sale } = await supabase.from("sales").select("*, customers(name, phone)").eq("id", req.params.id).eq("tenant_id", tenant_id).single();
   if (!sale) return res.status(404).json({ error: "Venda não encontrada" });
-  const { data: items } = await supabase.from("sale_items").select("*, products(name)").eq("sale_id", req.params.id).eq("tenant_id", tenant_id);
-  const formattedItems = items?.map((i: any) => ({ ...i, product_name: i.products?.name })) || [];
+  const { data: items } = await supabase.from("sale_items").select("*, products(name, cost_price)").eq("sale_id", req.params.id).eq("tenant_id", tenant_id);
+  const formattedItems = items?.map((i: any) => ({ 
+    ...i, 
+    product_name: i.products?.name,
+    cost_price: i.cost_price || i.products?.cost_price || 0
+  })) || [];
   res.json({ ...sale, customer_name: (sale as any).customers?.name, customer_phone: (sale as any).customers?.phone, items: formattedItems });
 });
 
@@ -1113,7 +1120,6 @@ app.post("/api/sales", validateFields(['items', 'total_amount', 'payment_method'
         product_id: productId, 
         quantity: qty, 
         unit_price: Number(item.unit_price || item.price), 
-        cost_price: Number(product?.cost_price || 0),
         discount: Number(item.discount || 0) 
       }]);
       
@@ -1210,7 +1216,6 @@ app.put("/api/sales/:id", async (req, res) => {
           product_id: productId, 
           quantity: qty, 
           unit_price: price, 
-          cost_price: costPrice,
           discount: disc 
         }]);
 
@@ -1278,7 +1283,7 @@ app.delete("/api/sales/:id", async (req, res) => {
 app.get("/api/stats", async (req, res) => {
   const tenant_id = getTenantId(req);
   try {
-    let salesQuery = supabase.from("sales").select("total_amount, created_at, sale_items(quantity, cost_price)");
+    let salesQuery = supabase.from("sales").select("total_amount, created_at, sale_items(quantity, products(cost_price))");
     let productsQuery = supabase.from("products").select("*");
     let saleItemsQuery = supabase.from("sale_items").select("quantity, products(name)");
 
@@ -1294,7 +1299,7 @@ app.get("/api/stats", async (req, res) => {
     
     const calculateProfit = (sale: any) => {
       const totalCost = sale.sale_items?.reduce((sum: number, item: any) => {
-        const cost = Number(item.cost_price || 0);
+        const cost = Number(item.products?.cost_price || 0);
         return sum + (cost * Number(item.quantity || 0));
       }, 0) || 0;
       return Number(sale.total_amount) - totalCost;

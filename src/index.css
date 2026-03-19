@@ -6,7 +6,12 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --color-primary: var(--primary-color);
   --color-primary-hover: var(--primary-hover);
+  --color-amber-600: var(--primary-color);
+  --color-amber-700: var(--primary-hover);
+  --color-amber-500: var(--primary-color);
 }
+
+@variant dark (&:where(.dark, .dark *));
 
 :root {
   --bg-main: #ffffff;
@@ -19,7 +24,7 @@
   --font-base-size: 16px;
 }
 
-[data-theme='dark'] {
+.dark {
   --bg-main: #000000;
   --bg-card: #111111;
   --text-main: #f8fafc;
