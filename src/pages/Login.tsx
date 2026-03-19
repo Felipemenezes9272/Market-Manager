@@ -30,11 +30,16 @@ export default function Login({ onLogin, isLoading }: LoginProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 relative overflow-hidden">
-      {/* Decorative Background Elements */}
-      <div className="absolute top-0 left-0 w-full h-full">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-amber-500/10 blur-[120px] rounded-full" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-amber-600/10 blur-[120px] rounded-full" />
+    <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
+      {/* Immersive Supermarket Background - High Quality & Reliable */}
+      <div 
+        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
+        style={{ 
+          backgroundImage: "url('https://images.unsplash.com/photo-1604719312566-8912e9227c6a?q=80&w=1920&auto=format&fit=crop')",
+        }}
+      >
+        {/* Dark Overlay with subtle blur for depth */}
+        <div className="absolute inset-0 bg-slate-950/75 backdrop-blur-[2px]" />
       </div>
 
       <motion.div 
@@ -42,29 +47,44 @@ export default function Login({ onLogin, isLoading }: LoginProps) {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md relative z-10"
       >
-        <div className="bg-white dark:bg-slate-900 rounded-[3rem] shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-          <div className="p-12 text-center bg-amber-600 relative overflow-hidden">
-            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10" />
+        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-[3rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] border border-white/20 dark:border-slate-800/50 overflow-hidden">
+          <div className="p-12 text-center relative overflow-hidden">
+            {/* Subtle pattern overlay */}
+            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5 pointer-events-none" />
+            
             <motion.div 
-              initial={{ scale: 0.5 }}
-              animate={{ scale: 1 }}
-              className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mx-auto mb-6 rotate-12 relative z-10 shadow-xl overflow-hidden"
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="w-40 h-40 flex items-center justify-center mx-auto mb-6 relative z-10"
             >
-              <img 
-                src="https://market-manager-ruddy.vercel.app/logo.png" 
-                alt="Market Manager Logo" 
-                className="w-full h-full object-contain p-2"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full bg-amber-600 flex items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"></path><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"></path><path d="M2 7h20"></path><path d="M22 7v3a2 2 0 0 1-2 2v0a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12v0a2 2 0 0 1-2-2V7"></path></svg></div>';
-                }}
-              />
+              {/* Vectorized Logo - Using a high-quality SVG for reliability */}
+              <div className="w-full h-full flex items-center justify-center">
+                <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-2xl" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#d97706" />
+                      <stop offset="100%" stopColor="#b45309" />
+                    </linearGradient>
+                  </defs>
+                  <path d="M20 30 L80 30 L75 70 L25 70 Z" fill="url(#logoGradient)" />
+                  <path d="M35 30 L35 20 C35 15 40 10 50 10 C60 10 65 15 65 20 L65 30" fill="none" stroke="#d97706" strokeWidth="4" strokeLinecap="round" />
+                  <rect x="30" y="40" width="40" height="4" rx="2" fill="white" opacity="0.3" />
+                  <rect x="30" y="50" width="40" height="4" rx="2" fill="white" opacity="0.3" />
+                  <rect x="30" y="60" width="40" height="4" rx="2" fill="white" opacity="0.3" />
+                </svg>
+              </div>
             </motion.div>
-            <h1 className="text-3xl font-black text-white uppercase tracking-tight relative z-10">Market Manager</h1>
-            <p className="text-amber-100 font-bold mt-2 relative z-10 uppercase text-[10px] tracking-[0.2em]">Sistema de Gestão Profissional</p>
+            
+            <h1 className="text-4xl font-black text-slate-900 dark:text-white uppercase tracking-tighter relative z-10">
+              Market<span className="text-amber-600">Manager</span>
+            </h1>
+            <p className="text-slate-500 dark:text-slate-400 font-bold mt-2 relative z-10 uppercase text-[10px] tracking-[0.3em]">
+              Gestão Inteligente de Varejo
+            </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-12 space-y-6">
+          <form onSubmit={handleSubmit} className="px-12 pb-12 space-y-6 relative z-10">
             {error && (
               <motion.div 
                 initial={{ opacity: 0, x: -10 }}
