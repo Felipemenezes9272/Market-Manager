@@ -181,14 +181,9 @@ const bootstrapAdmin = async () => {
 
       if (!existing) {
         console.log(`Bootstrapping super admin '${admin.email}'...`);
-        const { data: firstTenant, error: tenantError } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
         
-        if (tenantError) {
-          console.error("Error fetching first tenant:", tenantError);
-        }
-
         const { error: insertError } = await supabase.from("app_users").insert([{
-          tenant_id: firstTenant?.id || null,
+          tenant_id: null, // Super admins should not be linked to a specific store by default
           email: admin.email,
           password: "260892",
           name: admin.name,
@@ -203,7 +198,16 @@ const bootstrapAdmin = async () => {
           console.log(`Successfully bootstrapped admin ${admin.email}`);
         }
       } else {
-        console.log(`Admin ${admin.email} already exists.`);
+        console.log(`Admin ${admin.email} already exists. Ensuring super admin status...`);
+        const { error: updateError } = await supabase.from("app_users").update({
+          is_super_admin: true,
+          role: "admin",
+          tenant_id: null
+        }).eq("email", admin.email);
+        
+        if (updateError) {
+          console.error(`Error updating admin ${admin.email}:`, updateError);
+        }
       }
     }
     console.log("Bootstrap process finished.");
