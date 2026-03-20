@@ -155,8 +155,9 @@ const getTenantId = (req: express.Request) => {
 const bootstrapAdmin = async () => {
   if (!supabase) {
     console.error("Bootstrap: Supabase client is null");
-    return;
+    return { success: false, error: "Supabase client is null" };
   }
+  const results: any[] = [];
   try {
     const admins = [
       { email: "felipemenezes9272@gmail.com", name: "Felipe" },
@@ -176,26 +177,29 @@ const bootstrapAdmin = async () => {
 
       if (checkError) {
         console.error(`Error checking for admin ${admin.email}:`, checkError);
+        results.push({ email: admin.email, status: "error_checking", error: checkError });
         continue;
       }
 
       if (!existing) {
         console.log(`Bootstrapping super admin '${admin.email}'...`);
         
-        const { error: insertError } = await supabase.from("app_users").insert([{
-          tenant_id: null, // Super admins should not be linked to a specific store by default
+        const { data: inserted, error: insertError } = await supabase.from("app_users").insert([{
+          tenant_id: null,
           email: admin.email,
           password: "260892",
           name: admin.name,
           role: "admin",
           is_super_admin: true,
           email_confirmed: true
-        }]);
+        }]).select();
 
         if (insertError) {
           console.error(`Error inserting admin ${admin.email}:`, insertError);
+          results.push({ email: admin.email, status: "error_inserting", error: insertError });
         } else {
           console.log(`Successfully bootstrapped admin ${admin.email}`);
+          results.push({ email: admin.email, status: "inserted", data: inserted });
         }
       } else {
         console.log(`Admin ${admin.email} already exists. Ensuring super admin status...`);
@@ -207,12 +211,17 @@ const bootstrapAdmin = async () => {
         
         if (updateError) {
           console.error(`Error updating admin ${admin.email}:`, updateError);
+          results.push({ email: admin.email, status: "error_updating", error: updateError });
+        } else {
+          results.push({ email: admin.email, status: "updated" });
         }
       }
     }
     console.log("Bootstrap process finished.");
-  } catch (err) {
+    return { success: true, results };
+  } catch (err: any) {
     console.error("Bootstrap unexpected error:", err);
+    return { success: false, error: err.message || err };
   }
 };
 
@@ -220,16 +229,37 @@ const bootstrapAdmin = async () => {
 app.get("/api/bootstrap", async (req, res) => {
   if (!supabase) return res.status(503).json({ error: "Supabase not configured" });
   console.log("Manual bootstrap requested");
-  await bootstrapAdmin();
-  res.json({ message: "Bootstrap process completed. Check server logs for details." });
+  const result = await bootstrapAdmin();
+  res.json({ message: "Bootstrap process completed.", result });
 });
 
 // DEBUG ROUTE - REMOVE IN PRODUCTION
 app.get("/api/debug/users", async (req, res) => {
   if (!supabase) return res.status(503).json({ error: "Supabase not configured" });
-  const { data, error } = await supabase.from("app_users").select("email, is_super_admin, role");
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  console.log("Debug: Fetching all users from app_users");
+  const { data, error } = await supabase.from("app_users").select("*");
+  if (error) {
+    console.error("Debug Users Error:", error);
+    return res.status(500).json({ error: error.message });
+  }
+  res.json({
+    count: data?.length || 0,
+    users: data
+  });
+});
+
+app.get("/api/debug/table-info", async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: "Supabase not configured" });
+  try {
+    const { data, error } = await supabase.from("app_users").select("*").limit(1);
+    if (error) {
+      return res.status(500).json({ error: error.message, details: error });
+    }
+    const columns = data && data.length > 0 ? Object.keys(data[0]) : "No data to infer columns";
+    res.json({ table: "app_users", columns, sample: data?.[0] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // LGPD - Data Protection Routes
@@ -265,6 +295,11 @@ app.get("/api/health", async (req, res) => {
       status.db_connection = !error;
       status.tenants_count = count;
       if (error) status.db_error = error;
+
+      // Check for app_users table
+      const { data: usersTable, error: usersTableError } = await supabase.from("app_users").select("id").limit(1);
+      status.app_users_table = !usersTableError;
+      if (usersTableError) status.app_users_error = usersTableError;
     } catch (err: any) {
       status.db_connection = false;
       status.db_error = err.message;
@@ -295,13 +330,50 @@ app.post("/api/login", async (req, res) => {
 
     console.log(`Attempting login for: ${email}`);
     
+    // Auto-bootstrap if it's the super admin email and login fails
+    const superAdminEmails = ["felipemenezes9272@gmail.com", "felipe_fmcosta@hotmail.com"];
+    
     // Debug: Check if user exists at all
-    const { data: userExists, error: existError } = await supabase
+    let { data: userExists, error: existError } = await supabase
       .from("app_users")
       .select("id, email, password, is_super_admin, tenant_id, email_confirmed")
       .eq("email", email)
       .limit(1)
       .maybeSingle();
+
+    if (!userExists && superAdminEmails.includes(email)) {
+      console.log(`Super admin ${email} not found. Triggering automatic bootstrap...`);
+      const bootstrapResult = await bootstrapAdmin();
+      
+      if (!bootstrapResult.success) {
+        console.error("Bootstrap failed during login:", bootstrapResult.error);
+      }
+
+      // Retry fetch
+      const { data: retriedUser, error: retryError } = await supabase
+        .from("app_users")
+        .select("id, email, password, is_super_admin, tenant_id, email_confirmed")
+        .eq("email", email)
+        .limit(1)
+        .maybeSingle();
+      
+      if (retriedUser) {
+        userExists = retriedUser;
+        console.log(`Successfully bootstrapped and found user ${email} on retry.`);
+      } else {
+        console.error("Retry fetch failed after bootstrap. Error:", retryError);
+        // If bootstrap failed or retry failed, we might want to know why
+        if (bootstrapResult.results) {
+          const myResult = bootstrapResult.results.find((r: any) => r.email === email);
+          if (myResult && myResult.error) {
+            return res.status(401).json({ 
+              error: "Usuário não encontrado e falha ao criar administrador", 
+              details: myResult.error.message || myResult.error 
+            });
+          }
+        }
+      }
+    }
 
     if (existError) {
       console.error("Debug User Check Error:", existError);
