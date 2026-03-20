@@ -112,7 +112,8 @@ export default function Inventory({ logs, products }: InventoryProps) {
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/50">
@@ -170,6 +171,46 @@ export default function Inventory({ logs, products }: InventoryProps) {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile List */}
+        <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+          {filteredLogs.map(log => (
+            <div key={log.id} className="p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  <Calendar size={12} />
+                  {format(new Date(log.created_at), 'dd/MM/yy HH:mm')}
+                </div>
+                <span className={cn(
+                  "px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider flex items-center gap-1",
+                  log.type === 'Entrada' ? "bg-emerald-100 text-emerald-600" : 
+                  log.type === 'Saída' ? "bg-rose-100 text-rose-600" : "bg-amber-100 text-amber-600"
+                )}>
+                  {log.type}
+                </span>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 flex-shrink-0">
+                  <Package size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-black text-slate-900 dark:text-white truncate">{log.product_name}</p>
+                  <p className="text-[10px] font-bold text-slate-400 italic truncate">{log.notes || 'Sem observação'}</p>
+                </div>
+                <div className="text-right">
+                  <p className={cn(
+                    "font-black text-sm",
+                    log.type === 'Entrada' ? "text-emerald-600" : "text-rose-600"
+                  )}>
+                    {log.type === 'Entrada' ? '+' : '-'}{log.quantity}
+                  </p>
+                  <p className="text-[8px] font-bold text-slate-400 uppercase">Final: {log.resulting_stock}</p>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

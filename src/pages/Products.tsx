@@ -279,7 +279,9 @@ export default function Products({
           ))}
         </div>
       ) : (
-        <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/50">
@@ -366,6 +368,76 @@ export default function Products({
             </tbody>
           </table>
         </div>
+
+        {/* Mobile List View */}
+        <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+          {filteredProducts.map(product => (
+            <div key={product.id} className="p-4 space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {product.image_url ? (
+                    <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <Package size={24} className="text-slate-400" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[8px] font-black text-amber-600 uppercase tracking-widest">{product.category}</span>
+                    {product.stock_quantity <= product.min_stock_level && (
+                      <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest flex items-center gap-1">
+                        <AlertTriangle size={10} /> BAIXO
+                      </span>
+                    )}
+                  </div>
+                  <p className="font-black text-slate-900 dark:text-white truncate">{product.name}</p>
+                  <div className="flex items-center justify-between mt-2">
+                    <p className="font-black text-amber-600 text-sm">R$ {product.price.toFixed(2)}</p>
+                    <p className={cn(
+                      "font-black text-xs",
+                      product.stock_quantity <= product.min_stock_level ? "text-rose-600" : "text-emerald-600"
+                    )}>
+                      {product.stock_quantity} un
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-50 dark:border-slate-800">
+                <div className="flex items-center gap-2 text-slate-400">
+                  <Barcode size={14} />
+                  <span className="text-[10px] font-bold">{product.barcode || 'Sem código'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => { setAdjustingProduct(product); setShowAdjustModal(true); }}
+                    className="p-2 text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 rounded-lg"
+                  >
+                    <Plus size={16} />
+                  </button>
+                  <button 
+                    onClick={() => { setEditingProduct(product); setShowModal(true); }}
+                    className="p-2 text-amber-600 bg-amber-50 dark:bg-amber-500/10 rounded-lg"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                  <button 
+                    onClick={() => window.location.href = `/inventory?product=${product.id}`}
+                    className="p-2 text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-lg"
+                  >
+                    <History size={16} />
+                  </button>
+                  <button 
+                    onClick={() => onDeleteProduct(product.id)}
+                    className="p-2 text-rose-600 bg-rose-50 dark:bg-rose-500/10 rounded-lg"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
       )}
 
       {/* Product Modal */}
@@ -377,73 +449,73 @@ export default function Products({
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
           >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              className="bg-white dark:bg-slate-900 rounded-[3rem] max-w-2xl w-full shadow-2xl overflow-hidden"
-            >
-              <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                  {editingProduct ? 'Editar Produto' : 'Novo Produto'}
-                </h3>
-                <button onClick={() => setShowModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
-                  <X size={24} />
-                </button>
-              </div>
-              
-              <form onSubmit={handleSubmit} className="p-8 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Nome do Produto</label>
-                    <input name="name" defaultValue={editingProduct?.name} required className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Código de Barras</label>
-                    <input name="barcode" defaultValue={editingProduct?.barcode} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Categoria</label>
-                    <input name="category" defaultValue={editingProduct?.category} required className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Fornecedor</label>
-                    <select name="supplier_id" defaultValue={editingProduct?.supplier_id} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20">
-                      <option value="">Selecione um fornecedor</option>
-                      {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Preço de Custo</label>
-                    <input name="cost_price" type="number" step="0.01" defaultValue={editingProduct?.cost_price} required className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Preço de Venda</label>
-                    <input name="price" type="number" step="0.01" defaultValue={editingProduct?.price} required className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Estoque Inicial</label>
-                    <input name="stock_quantity" type="number" defaultValue={editingProduct?.stock_quantity || 0} required className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Estoque Mínimo</label>
-                    <input name="min_stock_level" type="number" defaultValue={editingProduct?.min_stock_level || 5} required className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">URL da Imagem</label>
-                  <input name="image_url" defaultValue={editingProduct?.image_url} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20" placeholder="https://exemplo.com/imagem.jpg" />
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                className="bg-white dark:bg-slate-900 rounded-3xl lg:rounded-[3rem] max-w-2xl w-full shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
+              >
+                <div className="p-6 lg:p-8 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <h3 className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white">
+                    {editingProduct ? 'Editar Produto' : 'Novo Produto'}
+                  </h3>
+                  <button onClick={() => setShowModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
+                    <X size={24} />
+                  </button>
                 </div>
                 
-                <div className="flex gap-4 pt-4">
-                  <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-white font-black rounded-2xl hover:bg-slate-200 transition-all">
-                    CANCELAR
-                  </button>
-                  <button type="submit" className="flex-1 py-4 bg-amber-600 text-white font-black rounded-2xl shadow-xl shadow-amber-600/20 hover:bg-amber-700 transition-all">
-                    SALVAR PRODUTO
-                  </button>
-                </div>
-              </form>
-            </motion.div>
+                <form onSubmit={handleSubmit} className="p-6 lg:p-8 space-y-4 lg:space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Nome do Produto</label>
+                      <input name="name" defaultValue={editingProduct?.name} required className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 rounded-xl lg:rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20 text-sm lg:text-base" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Código de Barras</label>
+                      <input name="barcode" defaultValue={editingProduct?.barcode} className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 rounded-xl lg:rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20 text-sm lg:text-base" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Categoria</label>
+                      <input name="category" defaultValue={editingProduct?.category} required className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 rounded-xl lg:rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20 text-sm lg:text-base" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Fornecedor</label>
+                      <select name="supplier_id" defaultValue={editingProduct?.supplier_id} className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 rounded-xl lg:rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20 text-sm lg:text-base">
+                        <option value="">Selecione um fornecedor</option>
+                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Preço de Custo</label>
+                      <input name="cost_price" type="number" step="0.01" defaultValue={editingProduct?.cost_price} required className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 rounded-xl lg:rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20 text-sm lg:text-base" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Preço de Venda</label>
+                      <input name="price" type="number" step="0.01" defaultValue={editingProduct?.price} required className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 rounded-xl lg:rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20 text-sm lg:text-base" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Estoque Inicial</label>
+                      <input name="stock_quantity" type="number" defaultValue={editingProduct?.stock_quantity || 0} required className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 rounded-xl lg:rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20 text-sm lg:text-base" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Estoque Mínimo</label>
+                      <input name="min_stock_level" type="number" defaultValue={editingProduct?.min_stock_level || 5} required className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 rounded-xl lg:rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20 text-sm lg:text-base" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">URL da Imagem</label>
+                    <input name="image_url" defaultValue={editingProduct?.image_url} className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 rounded-xl lg:rounded-2xl outline-none font-bold focus:ring-2 ring-amber-500/20 text-sm lg:text-base" placeholder="https://exemplo.com/imagem.jpg" />
+                  </div>
+                  
+                  <div className="flex gap-4 pt-4">
+                    <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-white font-black rounded-xl lg:rounded-2xl hover:bg-slate-200 transition-all text-sm lg:text-base">
+                      CANCELAR
+                    </button>
+                    <button type="submit" className="flex-1 py-4 bg-amber-600 text-white font-black rounded-xl lg:rounded-2xl shadow-xl shadow-amber-600/20 hover:bg-amber-700 transition-all text-sm lg:text-base">
+                      SALVAR
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -455,25 +527,25 @@ export default function Products({
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
-              className="bg-white dark:bg-slate-900 rounded-[3rem] max-w-md w-full shadow-2xl overflow-hidden"
+              className="bg-white dark:bg-slate-900 rounded-3xl lg:rounded-[3rem] max-w-md w-full shadow-2xl overflow-hidden"
             >
-              <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div className="p-6 lg:p-8 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                 <div>
-                  <h3 className="text-2xl font-black text-slate-900 dark:text-white">Ajustar Estoque</h3>
-                  <p className="text-sm text-slate-400 font-bold uppercase tracking-widest">{adjustingProduct.name}</p>
+                  <h3 className="text-xl lg:text-2xl font-black text-slate-900 dark:text-white">Ajustar Estoque</h3>
+                  <p className="text-[10px] lg:text-sm text-slate-400 font-bold uppercase tracking-widest">{adjustingProduct.name}</p>
                 </div>
                 <button onClick={() => setShowAdjustModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors">
                   <X size={24} />
                 </button>
               </div>
 
-              <form onSubmit={handleAdjustStock} className="p-8 space-y-6">
+              <form onSubmit={handleAdjustStock} className="p-6 lg:p-8 space-y-4 lg:space-y-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Tipo de Ajuste</label>
+                  <label className="text-[10px] lg:text-xs font-black text-slate-400 uppercase tracking-widest">Tipo de Ajuste</label>
                   <select 
                     name="type"
                     required
-                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-amber-500 font-bold text-slate-900 dark:text-white appearance-none"
+                    className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-xl lg:rounded-2xl focus:ring-2 focus:ring-amber-500 font-bold text-sm lg:text-base text-slate-900 dark:text-white appearance-none"
                   >
                     <option value="Entrada">Entrada (+)</option>
                     <option value="Saída">Saída (-)</option>
@@ -482,23 +554,23 @@ export default function Products({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Quantidade</label>
+                  <label className="text-[10px] lg:text-xs font-black text-slate-400 uppercase tracking-widest">Quantidade</label>
                   <input 
                     type="number"
                     name="quantity"
                     required
                     step="0.01"
                     placeholder="0.00"
-                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-amber-500 font-bold text-slate-900 dark:text-white"
+                    className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-xl lg:rounded-2xl focus:ring-2 focus:ring-amber-500 font-bold text-sm lg:text-base text-slate-900 dark:text-white"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Observações</label>
+                  <label className="text-[10px] lg:text-xs font-black text-slate-400 uppercase tracking-widest">Observações</label>
                   <textarea 
                     name="notes"
                     placeholder="Motivo do ajuste..."
-                    className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl focus:ring-2 focus:ring-amber-500 font-bold text-slate-900 dark:text-white min-h-[100px]"
+                    className="w-full px-5 lg:px-6 py-3.5 lg:py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-xl lg:rounded-2xl focus:ring-2 focus:ring-amber-500 font-bold text-sm lg:text-base text-slate-900 dark:text-white min-h-[80px] lg:min-h-[100px]"
                   />
                 </div>
 
@@ -506,13 +578,13 @@ export default function Products({
                   <button 
                     type="button"
                     onClick={() => setShowAdjustModal(false)}
-                    className="flex-1 px-8 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-black rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                    className="flex-1 px-4 lg:px-8 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-black rounded-xl lg:rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors text-xs lg:text-sm"
                   >
                     CANCELAR
                   </button>
                   <button 
                     type="submit"
-                    className="flex-1 px-8 py-4 bg-amber-600 text-white font-black rounded-2xl hover:bg-amber-700 shadow-lg shadow-amber-600/20 transition-all"
+                    className="flex-1 px-4 lg:px-8 py-4 bg-amber-600 text-white font-black rounded-xl lg:rounded-2xl hover:bg-amber-700 shadow-lg shadow-amber-600/20 transition-all text-xs lg:text-sm"
                   >
                     CONFIRMAR
                   </button>

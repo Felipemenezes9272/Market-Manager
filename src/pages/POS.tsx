@@ -48,11 +48,12 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [lastSale, setLastSale] = useState<any>(null);
+  const [editingSale, setEditingSale] = useState<any>(null);
   const [showOpenCashModal, setShowOpenCashModal] = useState(false);
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
   const [initialCashValue, setInitialCashValue] = useState('0');
   const [payments, setPayments] = useState<{ method: string, amount: number }[]>([]);
-  const [editingSale, setEditingSale] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'products' | 'cart'>('products');
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -497,58 +498,95 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
   }
 
   return (
-    <div className="h-[calc(100vh-12rem)] flex gap-8">
+    <div className="h-full lg:h-[calc(100vh-12rem)] flex flex-col lg:flex-row gap-4 lg:gap-8 overflow-hidden">
+      {/* Mobile Tab Switcher */}
+      <div className="flex lg:hidden bg-white dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <button 
+          onClick={() => setActiveTab('products')}
+          className={cn(
+            "flex-1 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2",
+            activeTab === 'products' ? "bg-amber-600 text-white shadow-lg shadow-amber-600/20" : "text-slate-400"
+          )}
+        >
+          <Package size={16} />
+          PRODUTOS
+        </button>
+        <button 
+          onClick={() => setActiveTab('cart')}
+          className={cn(
+            "flex-1 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 relative",
+            activeTab === 'cart' ? "bg-amber-600 text-white shadow-lg shadow-amber-600/20" : "text-slate-400"
+          )}
+        >
+          <ShoppingCart size={16} />
+          CARRINHO
+          {cart.length > 0 && (
+            <span className="absolute top-2 right-4 w-4 h-4 bg-rose-500 text-white text-[8px] flex items-center justify-center rounded-full border-2 border-white dark:border-slate-900">
+              {cart.reduce((s, i) => s + i.quantity, 0)}
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Products Section */}
-      <div className="flex-1 flex flex-col gap-6 min-w-0">
-        <div className="flex gap-4">
+      <div className={cn(
+        "flex-1 flex flex-col gap-4 lg:gap-6 min-w-0 h-full",
+        activeTab !== 'products' && "hidden lg:flex"
+      )}>
+        <div className="flex gap-2 lg:gap-4">
           <div className="flex-1 relative group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-amber-600 transition-colors" size={20} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-amber-600 transition-colors" size={18} />
             <input 
               ref={searchInputRef}
               type="text" 
-              placeholder="Buscar por nome ou código de barras..." 
-              className="w-full pl-12 pr-4 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl outline-none font-bold text-slate-700 dark:text-white focus:ring-2 ring-amber-500/20 transition-all"
+              placeholder="Buscar..." 
+              className="w-full pl-10 lg:pl-12 pr-4 py-3 lg:py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl lg:rounded-2xl outline-none font-bold text-sm lg:text-base text-slate-700 dark:text-white focus:ring-2 ring-amber-500/20 transition-all"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <button 
             onClick={() => setIsScannerOpen(true)}
-            className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-amber-600 hover:border-amber-500 transition-all shadow-sm"
+            className="p-3 lg:p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl lg:rounded-2xl text-slate-400 hover:text-amber-600 hover:border-amber-500 transition-all shadow-sm"
           >
-            <Camera size={24} />
+            <Camera size={20} className="lg:w-6 lg:h-6" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar pb-20 lg:pb-0">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 lg:gap-4">
             {filteredProducts.map(product => (
               <motion.button
                 key={product.id}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => addToCart(product)}
-                className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all text-left flex flex-col h-full group"
+                onClick={() => {
+                  addToCart(product);
+                  if (window.innerWidth < 1024) {
+                    addToast(`${product.name} adicionado!`, "success");
+                  }
+                }}
+                className="bg-white dark:bg-slate-900 p-3 lg:p-4 rounded-2xl lg:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-all text-left flex flex-col h-full group"
               >
-                <div className="aspect-square bg-slate-50 dark:bg-slate-800 rounded-2xl mb-4 overflow-hidden relative">
+                <div className="aspect-square bg-slate-50 dark:bg-slate-800 rounded-xl lg:rounded-2xl mb-3 lg:mb-4 overflow-hidden relative">
                   {product.image_url ? (
                     <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-300">
-                      <Package size={32} />
+                      <Package size={24} className="lg:w-8 lg:h-8" />
                     </div>
                   )}
                   {product.stock_quantity <= 5 && (
-                    <div className="absolute top-2 right-2 bg-rose-500 text-white px-2 py-0.5 rounded-lg text-[8px] font-black">
+                    <div className="absolute top-2 right-2 bg-rose-500 text-white px-1.5 py-0.5 rounded-lg text-[8px] font-black">
                       {product.stock_quantity} UN
                     </div>
                   )}
                 </div>
-                <h4 className="font-bold text-slate-900 dark:text-white text-sm line-clamp-2 mb-2">{product.name}</h4>
+                <h4 className="font-bold text-slate-900 dark:text-white text-xs lg:text-sm line-clamp-2 mb-1 lg:mb-2">{product.name}</h4>
                 <div className="mt-auto flex items-center justify-between">
-                  <span className="text-lg font-black text-amber-600">R$ {product.price.toFixed(2)}</span>
-                  <div className="w-8 h-8 bg-slate-50 dark:bg-slate-800 rounded-lg flex items-center justify-center text-slate-400 group-hover:bg-amber-500 group-hover:text-white transition-all">
-                    <Plus size={16} />
+                  <span className="text-sm lg:text-lg font-black text-amber-600">R$ {product.price.toFixed(2)}</span>
+                  <div className="w-6 h-6 lg:w-8 lg:h-8 bg-slate-50 dark:bg-slate-800 rounded-lg flex items-center justify-center text-slate-400 group-hover:bg-amber-500 group-hover:text-white transition-all">
+                    <Plus size={14} className="lg:w-4 lg:h-4" />
                   </div>
                 </div>
               </motion.button>
@@ -558,24 +596,27 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
       </div>
 
       {/* Cart Section */}
-      <div className="w-96 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col overflow-hidden">
-        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <h3 className="text-xl font-black flex items-center gap-2">
-            <ShoppingCart size={24} className="text-amber-600" />
+      <div className={cn(
+        "w-full lg:w-96 bg-white dark:bg-slate-900 rounded-3xl lg:rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col overflow-hidden h-full",
+        activeTab !== 'cart' && "hidden lg:flex"
+      )}>
+        <div className="p-4 lg:p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <h3 className="text-lg lg:text-xl font-black flex items-center gap-2">
+            <ShoppingCart size={20} className="text-amber-600 lg:w-6 lg:h-6" />
             Carrinho
           </h3>
-          <span className="bg-amber-100 text-amber-600 px-3 py-1 rounded-full text-xs font-black">
+          <span className="bg-amber-100 text-amber-600 px-3 py-1 rounded-full text-[10px] lg:text-xs font-black">
             {cart.reduce((s, i) => s + i.quantity, 0)} ITENS
           </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-3 lg:space-y-4 custom-scrollbar">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 space-y-4">
-              <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center">
-                <ShoppingCart size={32} />
+              <div className="w-12 h-12 lg:w-16 lg:h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center">
+                <ShoppingCart size={24} className="lg:w-8 lg:h-8" />
               </div>
-              <p className="font-bold text-sm uppercase tracking-widest">Carrinho Vazio</p>
+              <p className="font-bold text-xs lg:text-sm uppercase tracking-widest">Carrinho Vazio</p>
             </div>
           ) : (
             cart.map(item => (
@@ -584,39 +625,39 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
                 layout
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className="flex items-center gap-4 group"
+                className="flex items-center gap-3 lg:gap-4 group"
               >
-                <div className="w-12 h-12 bg-slate-50 dark:bg-slate-800 rounded-xl flex-shrink-0 overflow-hidden">
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-slate-50 dark:bg-slate-800 rounded-lg lg:rounded-xl flex-shrink-0 overflow-hidden">
                   {item.image_url ? (
                     <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-300">
-                      <Package size={20} />
+                      <Package size={16} className="lg:w-5 lg:h-5" />
                     </div>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-sm text-slate-900 dark:text-white truncate">{item.name}</p>
-                  <p className="text-xs font-black text-amber-600">R$ {item.price.toFixed(2)}</p>
+                  <p className="font-bold text-xs lg:text-sm text-slate-900 dark:text-white truncate">{item.name}</p>
+                  <p className="text-[10px] lg:text-xs font-black text-amber-600">R$ {item.price.toFixed(2)}</p>
                 </div>
-                <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-xl p-1">
-                  <button onClick={() => updateQuantity(item.id, -1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-amber-600"><Minus size={14} /></button>
-                  <span className="w-8 text-center text-xs font-black">{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.id, 1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-amber-600"><Plus size={14} /></button>
+                <div className="flex items-center bg-slate-50 dark:bg-slate-800 rounded-lg lg:rounded-xl p-1">
+                  <button onClick={() => updateQuantity(item.id, -1)} className="w-5 h-5 lg:w-6 lg:h-6 flex items-center justify-center text-slate-400 hover:text-amber-600"><Minus size={12} /></button>
+                  <span className="w-6 lg:w-8 text-center text-[10px] lg:text-xs font-black">{item.quantity}</span>
+                  <button onClick={() => updateQuantity(item.id, 1)} className="w-5 h-5 lg:w-6 lg:h-6 flex items-center justify-center text-slate-400 hover:text-amber-600"><Plus size={12} /></button>
                 </div>
-                <button onClick={() => removeFromCart(item.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={18} /></button>
+                <button onClick={() => removeFromCart(item.id)} className="p-1 lg:p-2 text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={16} className="lg:w-[18px] lg:h-[18px]" /></button>
               </motion.div>
             ))
           )}
         </div>
 
-        <div className="p-8 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 space-y-6">
-          <div className="space-y-3">
-            <div className="flex justify-between text-sm font-bold text-slate-500">
+        <div className="p-6 lg:p-8 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 space-y-4 lg:space-y-6">
+          <div className="space-y-2 lg:space-y-3">
+            <div className="flex justify-between text-xs lg:text-sm font-bold text-slate-500">
               <span>Subtotal</span>
               <span>R$ {subtotal.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-sm font-bold text-rose-500">
+            <div className="flex justify-between text-xs lg:text-sm font-bold text-rose-500">
               <span>Desconto</span>
               <div className="flex items-center gap-2">
                 <span>- R$</span>
@@ -624,19 +665,19 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
                   type="number" 
                   value={discount}
                   onChange={(e) => setDiscount(Number(e.target.value))}
-                  className="w-20 bg-transparent border-b border-rose-200 text-right focus:outline-none font-black"
+                  className="w-16 lg:w-20 bg-transparent border-b border-rose-200 text-right focus:outline-none font-black"
                 />
               </div>
             </div>
-            <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
-              <span className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Total</span>
-              <span className="text-3xl font-black text-amber-600">R$ {finalTotal.toFixed(2)}</span>
+            <div className="pt-2 lg:pt-3 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
+              <span className="text-base lg:text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Total</span>
+              <span className="text-2xl lg:text-3xl font-black text-amber-600">R$ {finalTotal.toFixed(2)}</span>
             </div>
           </div>
 
           <div className="space-y-3">
             <select 
-              className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold outline-none"
+              className="w-full px-4 py-2.5 lg:py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs lg:text-sm font-bold outline-none"
               onChange={(e) => setSelectedCustomer(customers.find(c => c.id === Number(e.target.value)) || null)}
               value={selectedCustomer?.id || ""}
             >
@@ -646,7 +687,7 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
             <button 
               disabled={cart.length === 0}
               onClick={() => setIsCheckoutOpen(true)}
-              className="w-full py-4 bg-amber-600 text-white font-black rounded-2xl shadow-xl shadow-amber-600/20 hover:bg-amber-700 transition-all disabled:opacity-50 disabled:shadow-none"
+              className="w-full py-3.5 lg:py-4 bg-amber-600 text-white font-black rounded-xl lg:rounded-2xl shadow-xl shadow-amber-600/20 hover:bg-amber-700 transition-all disabled:opacity-50 disabled:shadow-none text-sm lg:text-base"
             >
               FINALIZAR VENDA
             </button>
@@ -659,23 +700,23 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
         {isCheckoutOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsCheckoutOpen(false)} className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" />
-            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="relative bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] shadow-2xl overflow-hidden">
-              <div className="p-10 text-center bg-amber-600 text-white">
-                <div className="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center mx-auto mb-6 rotate-12">
-                  <CheckCircle2 size={40} />
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="relative bg-white dark:bg-slate-900 w-full max-w-md lg:rounded-[3rem] rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+              <div className="p-6 lg:p-10 text-center bg-amber-600 text-white">
+                <div className="w-12 h-12 lg:w-20 lg:h-20 bg-white/20 rounded-2xl lg:rounded-3xl flex items-center justify-center mx-auto mb-4 lg:mb-6 rotate-12">
+                  <CheckCircle2 size={24} className="lg:w-10 lg:h-10" />
                 </div>
-                <h3 className="text-3xl font-black uppercase tracking-tight">Pagamento</h3>
-                <p className="opacity-80 font-bold mt-1">Selecione o método desejado</p>
+                <h3 className="text-xl lg:text-3xl font-black uppercase tracking-tight">Pagamento</h3>
+                <p className="opacity-80 font-bold mt-1 text-xs lg:text-base">Selecione o método desejado</p>
               </div>
 
-              <div className="p-10 space-y-8">
+              <div className="p-6 lg:p-10 space-y-6 lg:space-y-8">
                 <div className="text-center">
-                  <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Total a Pagar</span>
-                  <div className="text-5xl font-black text-slate-900 dark:text-white mt-2">R$ {finalTotal.toFixed(2)}</div>
+                  <span className="text-slate-400 text-[8px] lg:text-[10px] font-black uppercase tracking-widest">Total a Pagar</span>
+                  <div className="text-3xl lg:text-5xl font-black text-slate-900 dark:text-white mt-1 lg:mt-2">R$ {finalTotal.toFixed(2)}</div>
                   {settings?.pos_show_change === 'true' && payments.reduce((s, p) => s + p.amount, 0) > finalTotal && (
-                    <div className="mt-4 p-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-2xl border border-emerald-100 dark:border-emerald-500/20">
-                      <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Troco</span>
-                      <div className="text-3xl font-black text-emerald-600">
+                    <div className="mt-3 lg:mt-4 p-3 lg:p-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl lg:rounded-2xl border border-emerald-100 dark:border-emerald-500/20">
+                      <span className="text-[8px] lg:text-[10px] font-black text-emerald-600 uppercase tracking-widest">Troco</span>
+                      <div className="text-xl lg:text-3xl font-black text-emerald-600">
                         R$ {(payments.reduce((s, p) => s + p.amount, 0) - finalTotal).toFixed(2)}
                       </div>
                     </div>
@@ -684,14 +725,14 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
 
                 {payments.length > 0 && (
                   <div className="space-y-2">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pagamentos Adicionados</span>
+                    <span className="text-[8px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest">Pagamentos Adicionados</span>
                     <div className="space-y-2">
                       {payments.map((p, i) => (
-                        <div key={i} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                        <div key={i} className="flex items-center justify-between p-2 lg:p-3 bg-slate-50 dark:bg-slate-800 rounded-lg lg:rounded-xl">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm">{p.method}</span>
+                            <span className="font-bold text-xs lg:text-sm">{p.method}</span>
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 lg:gap-3">
                             <input 
                               type="number" 
                               value={p.amount}
@@ -700,23 +741,23 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
                                 newPayments[i].amount = Number(e.target.value);
                                 setPayments(newPayments);
                               }}
-                              className="w-24 bg-transparent text-right font-black text-amber-600 outline-none"
+                              className="w-16 lg:w-24 bg-transparent text-right font-black text-amber-600 outline-none text-xs lg:text-base"
                             />
-                            <button onClick={() => removePayment(i)} className="text-rose-500 hover:text-rose-600"><X size={16} /></button>
+                            <button onClick={() => removePayment(i)} className="text-rose-500 hover:text-rose-600"><X size={14} className="lg:w-4 lg:h-4" /></button>
                           </div>
                         </div>
                       ))}
                     </div>
                     <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800">
-                      <span className="text-xs font-bold text-slate-400 uppercase">Restante</span>
-                      <span className={cn("font-black", (finalTotal - payments.reduce((s, p) => s + p.amount, 0)) > 0 ? "text-rose-500" : "text-emerald-500")}>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">Restante</span>
+                      <span className={cn("font-black text-xs lg:text-base", (finalTotal - payments.reduce((s, p) => s + p.amount, 0)) > 0 ? "text-rose-500" : "text-emerald-500")}>
                         R$ {(finalTotal - payments.reduce((s, p) => s + p.amount, 0)).toFixed(2)}
                       </span>
                     </div>
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3 lg:gap-4">
                   {[
                     { id: 'Dinheiro', icon: Banknote, label: 'Dinheiro' },
                     { id: 'PIX', icon: QrCode, label: 'PIX' },
@@ -726,10 +767,10 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
                     <button 
                       key={method.id}
                       onClick={() => addPayment(method.id)}
-                      className="flex flex-col items-center gap-3 p-6 rounded-3xl border-2 border-slate-100 dark:border-slate-800 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all group"
+                      className="flex flex-col items-center gap-2 lg:gap-3 p-4 lg:p-6 rounded-2xl lg:rounded-3xl border-2 border-slate-100 dark:border-slate-800 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all group"
                     >
-                      <method.icon size={32} className="text-slate-400 group-hover:text-amber-600 transition-colors" />
-                      <span className="font-black text-[10px] uppercase tracking-widest text-slate-500 group-hover:text-amber-600">{method.label}</span>
+                      <method.icon size={24} className="lg:w-8 lg:h-8 text-slate-400 group-hover:text-amber-600 transition-colors" />
+                      <span className="font-black text-[8px] lg:text-[10px] uppercase tracking-widest text-slate-500 group-hover:text-amber-600">{method.label}</span>
                     </button>
                   ))}
                 </div>
@@ -738,7 +779,7 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
                   <button 
                     onClick={handleCheckout}
                     disabled={Math.abs(payments.reduce((s, p) => s + p.amount, 0) - finalTotal) > 0.01}
-                    className="w-full py-5 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:shadow-none uppercase tracking-widest text-sm"
+                    className="w-full py-4 lg:py-5 bg-emerald-600 text-white font-black rounded-xl lg:rounded-2xl shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:shadow-none uppercase tracking-widest text-xs lg:text-sm"
                   >
                     {editingSale ? 'ATUALIZAR VENDA' : 'CONFIRMAR PAGAMENTO'}
                   </button>
@@ -752,7 +793,7 @@ export default function POS({ products, customers, cashSession, onCheckout, onOp
                         setPayments([]);
                       }
                     }}
-                    className="w-full py-4 text-slate-400 font-black hover:text-slate-600 transition-colors uppercase text-xs tracking-widest"
+                    className="w-full py-3 text-slate-400 font-black hover:text-slate-600 transition-colors uppercase text-[10px] lg:text-xs tracking-widest"
                   >
                     Cancelar Operação
                   </button>

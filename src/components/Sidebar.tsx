@@ -48,7 +48,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
   const displayItems = user?.is_super_admin ? adminItems : menuItems;
 
   return (
-    <aside className="w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen sticky top-0">
+    <aside className="hidden lg:flex w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-col h-screen sticky top-0">
       <div className="p-8 flex-1 overflow-y-auto">
         <div className="flex items-center gap-3 mb-8">
           <div className={cn(
