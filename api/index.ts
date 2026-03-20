@@ -1,21 +1,19 @@
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
-import dotenv from "dotenv";
-import { sendConfirmationEmail, sendPasswordResetEmail } from "./emailService.ts";
-
-dotenv.config();
+import { sendConfirmationEmail, sendPasswordResetEmail } from "./emailService.js";
 
 // Initialize Supabase Client
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseServiceKey || supabaseUrl === "undefined" || supabaseServiceKey === "undefined") {
-  console.warn("Supabase environment variables are missing or invalid!");
+let supabase: any = null;
+if (supabaseUrl && supabaseServiceKey && supabaseUrl !== "undefined" && supabaseServiceKey !== "undefined") {
+  try {
+    supabase = createClient(supabaseUrl, supabaseServiceKey);
+  } catch (err) {
+    console.error("Failed to initialize Supabase client:", err);
+  }
 }
-
-const supabase = (supabaseUrl && supabaseServiceKey && supabaseUrl !== "undefined" && supabaseServiceKey !== "undefined") 
-  ? createClient(supabaseUrl, supabaseServiceKey) 
-  : null as any;
 
 // Helper to check if user is super admin
 const isSuperAdmin = (req: express.Request) => (req as any).is_super_admin;
@@ -32,6 +30,10 @@ const validateFields = (fields: string[]) => (req: express.Request, res: express
 const app = express();
 app.use(express.json());
 
+app.get("/api/test", (req, res) => {
+  res.json({ message: "API is working" });
+});
+
 // Middleware to check if Supabase is configured
 app.use("/api", (req, res, next) => {
   if (!supabase && req.path !== "/health") {
@@ -39,6 +41,9 @@ app.use("/api", (req, res, next) => {
     return res.status(503).json({ 
       error: "Servidor não configurado. Por favor, adicione SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente do AI Studio (Menu Settings)." 
     });
+  }
+  if (!supabase && req.path === "/health") {
+    return next();
   }
   next();
 });
@@ -51,7 +56,7 @@ app.use("/api", (req, res, next) => {
 
 // Securely resolve tenant_id
 app.use("/api", async (req, res, next) => {
-  if (req.path === "/login" || req.path === "/health") {
+  if (req.path === "/login" || req.path === "/health" || !supabase) {
     return next();
   }
   
@@ -148,26 +153,41 @@ const getTenantId = (req: express.Request) => {
 
 // Bootstrap Super Admin - Disabled top-level call to prevent Vercel timeouts
 const bootstrapAdmin = async () => {
-  if (!supabase) return;
+  if (!supabase) {
+    console.error("Bootstrap: Supabase client is null");
+    return;
+  }
   try {
     const admins = [
       { email: "felipemenezes9272@gmail.com", name: "Felipe" },
       { email: "felipe_fmcosta@hotmail.com", name: "Felipe Costa" }
     ];
 
+    console.log("Starting bootstrap process...");
+
     for (const admin of admins) {
-      const { data: existing } = await supabase
+      console.log(`Checking if admin exists: ${admin.email}`);
+      const { data: existing, error: checkError } = await supabase
         .from("app_users")
-        .select("id")
+        .select("id, email")
         .eq("email", admin.email)
         .limit(1)
         .maybeSingle();
 
+      if (checkError) {
+        console.error(`Error checking for admin ${admin.email}:`, checkError);
+        continue;
+      }
+
       if (!existing) {
         console.log(`Bootstrapping super admin '${admin.email}'...`);
-        const { data: firstTenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+        const { data: firstTenant, error: tenantError } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
         
-        await supabase.from("app_users").insert([{
+        if (tenantError) {
+          console.error("Error fetching first tenant:", tenantError);
+        }
+
+        const { error: insertError } = await supabase.from("app_users").insert([{
           tenant_id: firstTenant?.id || null,
           email: admin.email,
           password: "260892",
@@ -176,8 +196,17 @@ const bootstrapAdmin = async () => {
           is_super_admin: true,
           email_confirmed: true
         }]);
+
+        if (insertError) {
+          console.error(`Error inserting admin ${admin.email}:`, insertError);
+        } else {
+          console.log(`Successfully bootstrapped admin ${admin.email}`);
+        }
+      } else {
+        console.log(`Admin ${admin.email} already exists.`);
       }
     }
+    console.log("Bootstrap process finished.");
   } catch (err) {
     console.error("Bootstrap unexpected error:", err);
   }
@@ -185,8 +214,18 @@ const bootstrapAdmin = async () => {
 
 // Route to manually trigger bootstrap if needed
 app.get("/api/bootstrap", async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: "Supabase not configured" });
+  console.log("Manual bootstrap requested");
   await bootstrapAdmin();
-  res.json({ message: "Bootstrap process completed" });
+  res.json({ message: "Bootstrap process completed. Check server logs for details." });
+});
+
+// DEBUG ROUTE - REMOVE IN PRODUCTION
+app.get("/api/debug/users", async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: "Supabase not configured" });
+  const { data, error } = await supabase.from("app_users").select("email, is_super_admin, role");
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
 // LGPD - Data Protection Routes
@@ -206,16 +245,40 @@ app.post("/api/lgpd/request-data", async (req, res) => {
   });
 });
 
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
+app.get("/api/health", async (req, res) => {
+  const status: any = {
+    status: "ok",
+    supabase: !!supabase,
+    env: {
+      url: !!process.env.SUPABASE_URL,
+      key: !!(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)
+    }
+  };
+
+  if (supabase) {
+    try {
+      const { count, error } = await supabase.from("tenants").select("*", { count: 'exact', head: true });
+      status.db_connection = !error;
+      status.tenants_count = count;
+      if (error) status.db_error = error;
+    } catch (err: any) {
+      status.db_connection = false;
+      status.db_error = err.message;
+    }
+  }
+
+  res.json(status);
 });
 
 app.post("/api/login", async (req, res) => {
-  const { email, password } = req.body;
+  let { email, password } = req.body;
   
   if (!email || !password) {
     return res.status(400).json({ error: "E-mail e senha são obrigatórios" });
   }
+
+  email = email.trim().toLowerCase();
+  password = password.trim();
 
   try {
     if (!supabase) {
@@ -227,22 +290,32 @@ app.post("/api/login", async (req, res) => {
     }
 
     console.log(`Attempting login for: ${email}`);
-    const { data: user, error } = await supabase
+    
+    // Debug: Check if user exists at all
+    const { data: userExists, error: existError } = await supabase
       .from("app_users")
-      .select("*")
+      .select("id, email, password, is_super_admin, tenant_id, email_confirmed")
       .eq("email", email)
-      .eq("password", password)
       .limit(1)
       .maybeSingle();
 
-    if (error) {
-      console.error("Supabase Login Query Error:", error);
-      return res.status(500).json({ 
-        error: "Erro na consulta ao banco de dados", 
-        details: error.message,
-        code: error.code
-      });
+    if (existError) {
+      console.error("Debug User Check Error:", existError);
+      return res.status(500).json({ error: "Erro na consulta ao banco de dados", details: existError.message });
     }
+
+    if (!userExists) {
+      console.warn(`Login Failed: User ${email} not found in database.`);
+      return res.status(401).json({ error: "Usuário não encontrado" });
+    }
+
+    // Direct comparison for now (plain text)
+    if (userExists.password !== password) {
+      console.warn(`Login Failed: Incorrect password for ${email}.`);
+      return res.status(401).json({ error: "Senha incorreta" });
+    }
+
+    const user = userExists;
 
     if (user) {
       if (!user.email_confirmed && !user.is_super_admin) {
