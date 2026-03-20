@@ -13,7 +13,6 @@ export const apiFetch = async (url: string, options: RequestInit = {}) => {
   }
 
   const method = options.method || 'GET';
-  console.log(`Fetching: ${method} ${url}`, { headers });
   const response = await fetch(url, { ...options, method, headers });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

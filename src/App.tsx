@@ -148,10 +148,13 @@ export default function App() {
     return () => window.removeEventListener('edit-sale', handleEditSale);
   }, [navigate]);
 
+  const [isFetching, setIsFetching] = useState(false);
+
   const fetchAllData = async (currentUser?: User | null) => {
     const activeUser = currentUser !== undefined ? currentUser : user;
-    if (!activeUser) return;
+    if (!activeUser || isFetching) return;
 
+    setIsFetching(true);
     try {
       const [
         productsData, 
@@ -204,6 +207,8 @@ export default function App() {
         addToast(err.message || "Acesso suspenso", "error");
         handleLogout();
       }
+    } finally {
+      setIsFetching(false);
     }
   };
 
@@ -217,6 +222,7 @@ export default function App() {
       setUser(data);
       localStorage.setItem('user', JSON.stringify(data));
       // Start fetching data immediately to reduce perceived delay
+      // The useEffect will also trigger, but isFetching guard will prevent double call
       fetchAllData(data);
       navigate('/');
     } finally {
@@ -241,7 +247,13 @@ export default function App() {
   const analyzeBusiness = async () => {
     setIsAnalyzing(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const apiKey = settings?.gemini_api_key || process.env.GEMINI_API_KEY;
+      
+      if (!apiKey || apiKey === 'undefined' || apiKey === '') {
+        throw new Error("Chave de API não configurada. Verifique as configurações de Integração IA.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
       
       const prompt = `
         Analise os seguintes dados do meu mercado e forneça 3 insights estratégicos curtos e acionáveis:
@@ -256,9 +268,9 @@ export default function App() {
         contents: prompt
       });
       setAiInsights(result.text || '');
-    } catch (err) {
+    } catch (err: any) {
       console.error('AI Analysis failed:', err);
-      addToast("Falha na análise de IA", "error");
+      addToast(err.message || "Falha na análise de IA", "error");
     } finally {
       setIsAnalyzing(false);
     }
