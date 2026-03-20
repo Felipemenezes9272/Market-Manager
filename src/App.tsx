@@ -204,12 +204,12 @@ export default function App() {
     }
   };
 
-  const handleLogin = async (username: string, password: string) => {
+  const handleLogin = async (email: string, password: string) => {
     setIsLoading(true);
     try {
       const data = await apiFetch('/api/login', {
         method: 'POST',
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ email, password })
       });
       setUser(data);
       localStorage.setItem('user', JSON.stringify(data));
@@ -313,6 +313,12 @@ export default function App() {
     }
   };
 
+  const handleUpdateSettings = async (data: any) => {
+    const endpoint = user?.is_super_admin ? '/api/admin/settings' : '/api/settings';
+    await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(data) });
+    fetchAllData();
+  };
+
   // CRUD Handlers
   const crudHandlers = {
     products: {
@@ -399,7 +405,7 @@ export default function App() {
               )
             } />
             <Route path="/pos" element={<POS products={products} customers={customers} cashSession={cashSession} onCheckout={handleCheckout} onOpenCash={handleOpenCashSession} addToast={addToast} apiFetch={apiFetch} fetchAllData={fetchAllData} settings={settings} />} />
-            <Route path="/products" element={<Products products={products} suppliers={suppliers} onAddProduct={crudHandlers.products.add} onUpdateProduct={crudHandlers.products.update} onDeleteProduct={crudHandlers.products.delete} addToast={addToast} />} />
+            <Route path="/products" element={<Products products={products} suppliers={suppliers} onAddProduct={crudHandlers.products.add} onUpdateProduct={crudHandlers.products.update} onDeleteProduct={crudHandlers.products.delete} addToast={addToast} settings={settings} onUpdateSettings={handleUpdateSettings} />} />
             <Route path="/customers" element={<Customers customers={customers} onAddCustomer={crudHandlers.customers.add} onUpdateCustomer={crudHandlers.customers.update} onDeleteCustomer={crudHandlers.customers.delete} addToast={addToast} />} />
             <Route path="/suppliers" element={<Suppliers suppliers={suppliers} onAddSupplier={crudHandlers.suppliers.add} onUpdateSupplier={crudHandlers.suppliers.update} onDeleteSupplier={crudHandlers.suppliers.delete} addToast={addToast} />} />
             <Route path="/financial" element={<Financial bills={bills} suppliers={suppliers} onAddBill={crudHandlers.bills.add} onPayBill={crudHandlers.bills.pay} onDeleteBill={crudHandlers.bills.delete} addToast={addToast} />} />
@@ -411,11 +417,7 @@ export default function App() {
                 settings={settings} 
                 theme={theme}
                 setTheme={handleUpdateTheme}
-                onUpdateSettings={async (data) => { 
-                  const endpoint = user?.is_super_admin ? '/api/admin/settings' : '/api/settings';
-                  await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(data) }); 
-                  fetchAllData(); 
-                }} 
+                onUpdateSettings={handleUpdateSettings} 
                 addToast={addToast} 
               />
             } />

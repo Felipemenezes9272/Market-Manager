@@ -13,7 +13,9 @@ import {
   ChevronRight,
   TrendingUp,
   History,
-  X
+  X,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../utils';
@@ -25,6 +27,8 @@ interface ProductsProps {
   onUpdateProduct: (id: number, data: any) => Promise<void>;
   onDeleteProduct: (id: number) => Promise<void>;
   addToast: (msg: string, type?: any) => void;
+  settings?: any;
+  onUpdateSettings?: (data: any) => Promise<void>;
 }
 
 export default function Products({ 
@@ -33,7 +37,9 @@ export default function Products({
   onAddProduct, 
   onUpdateProduct, 
   onDeleteProduct,
-  addToast
+  addToast,
+  settings,
+  onUpdateSettings
 }: ProductsProps) {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('Todos');
@@ -41,6 +47,23 @@ export default function Products({
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [adjustingProduct, setAdjustingProduct] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(settings?.view_mode || 'grid');
+
+  // Sync with settings
+  React.useEffect(() => {
+    if (settings?.view_mode) setViewMode(settings.view_mode);
+  }, [settings]);
+
+  const handleToggleView = async (mode: 'grid' | 'list') => {
+    setViewMode(mode);
+    if (onUpdateSettings) {
+      try {
+        await onUpdateSettings({ view_mode: mode });
+      } catch (err) {
+        console.error("Failed to save view mode preference", err);
+      }
+    }
+  };
 
   const categories = ['Todos', ...Array.from(new Set(products.map(p => p.category)))];
 
@@ -134,6 +157,26 @@ export default function Products({
           />
         </div>
         <div className="flex items-center gap-4">
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
+            <button
+              onClick={() => handleToggleView('grid')}
+              className={cn(
+                "p-2 rounded-xl transition-all",
+                viewMode === 'grid' ? "bg-white dark:bg-slate-700 text-amber-600 shadow-sm" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <LayoutGrid size={20} />
+            </button>
+            <button
+              onClick={() => handleToggleView('list')}
+              className={cn(
+                "p-2 rounded-xl transition-all",
+                viewMode === 'list' ? "bg-white dark:bg-slate-700 text-amber-600 shadow-sm" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+              <List size={20} />
+            </button>
+          </div>
           <div className="relative">
             <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <select 
@@ -147,93 +190,183 @@ export default function Products({
         </div>
       </div>
 
-      {/* Products Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
-        {filteredProducts.map(product => (
-          <motion.div
-            key={product.id}
-            layout
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all group overflow-hidden"
-          >
-            <div className="aspect-[4/3] bg-slate-100 dark:bg-slate-800 relative overflow-hidden">
-              {product.image_url ? (
-                <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <Package size={64} className="text-slate-300 dark:text-slate-700" />
+      {/* Products Display */}
+      {viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
+          {filteredProducts.map(product => (
+            <motion.div
+              key={product.id}
+              layout
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl transition-all group overflow-hidden"
+            >
+              <div className="aspect-[4/3] bg-slate-100 dark:bg-slate-800 relative overflow-hidden">
+                {product.image_url ? (
+                  <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Package size={64} className="text-slate-300 dark:text-slate-700" />
+                  </div>
+                )}
+                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button 
+                    onClick={() => { setAdjustingProduct(product); setShowAdjustModal(true); }}
+                    className="p-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-xl text-emerald-600 shadow-lg hover:scale-110 transition-transform"
+                    title="Ajustar Estoque"
+                  >
+                    <Plus size={18} />
+                  </button>
+                  <button 
+                    onClick={() => { setEditingProduct(product); setShowModal(true); }}
+                    className="p-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-xl text-amber-600 shadow-lg hover:scale-110 transition-transform"
+                  >
+                    <Edit3 size={18} />
+                  </button>
+                  <button 
+                    onClick={() => onDeleteProduct(product.id)}
+                    className="p-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-xl text-rose-600 shadow-lg hover:scale-110 transition-transform"
+                  >
+                    <Trash2 size={18} />
+                  </button>
                 </div>
-              )}
-              <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button 
-                  onClick={() => { setAdjustingProduct(product); setShowAdjustModal(true); }}
-                  className="p-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-xl text-emerald-600 shadow-lg hover:scale-110 transition-transform"
-                  title="Ajustar Estoque"
-                >
-                  <Plus size={18} />
-                </button>
-                <button 
-                  onClick={() => { setEditingProduct(product); setShowModal(true); }}
-                  className="p-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-xl text-amber-600 shadow-lg hover:scale-110 transition-transform"
-                >
-                  <Edit3 size={18} />
-                </button>
-                <button 
-                  onClick={() => onDeleteProduct(product.id)}
-                  className="p-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-xl text-rose-600 shadow-lg hover:scale-110 transition-transform"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-              {product.stock_quantity <= product.min_stock_level && (
-                <div className="absolute top-4 left-4 bg-rose-500 text-white px-3 py-1 rounded-lg text-[10px] font-black flex items-center gap-1">
-                  <AlertTriangle size={12} /> ESTOQUE BAIXO
-                </div>
-              )}
-            </div>
-            
-            <div className="p-6">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">{product.category}</span>
-                  <h4 className="text-lg font-black text-slate-900 dark:text-white line-clamp-1">{product.name}</h4>
-                </div>
+                {product.stock_quantity <= product.min_stock_level && (
+                  <div className="absolute top-4 left-4 bg-rose-500 text-white px-3 py-1 rounded-lg text-[10px] font-black flex items-center gap-1">
+                    <AlertTriangle size={12} /> ESTOQUE BAIXO
+                  </div>
+                )}
               </div>
               
-              <div className="grid grid-cols-2 gap-4 mt-6">
-                <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Preço Venda</p>
-                  <p className="text-lg font-black text-amber-600">R$ {product.price.toFixed(2)}</p>
+              <div className="p-6">
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">{product.category}</span>
+                    <h4 className="text-lg font-black text-slate-900 dark:text-white line-clamp-1">{product.name}</h4>
+                  </div>
                 </div>
-                <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Estoque</p>
-                  <p className={cn(
-                    "text-lg font-black",
-                    product.stock_quantity <= product.min_stock_level ? "text-rose-600" : "text-emerald-600"
-                  )}>
-                    {product.stock_quantity} <span className="text-xs">un</span>
-                  </p>
+                
+                <div className="grid grid-cols-2 gap-4 mt-6">
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Preço Venda</p>
+                    <p className="text-lg font-black text-amber-600">R$ {product.price.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Estoque</p>
+                    <p className={cn(
+                      "text-lg font-black",
+                      product.stock_quantity <= product.min_stock_level ? "text-rose-600" : "text-emerald-600"
+                    )}>
+                      {product.stock_quantity} <span className="text-xs">un</span>
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-slate-400">
-                  <Barcode size={14} />
-                  <span className="text-xs font-bold">{product.barcode || 'Sem código'}</span>
+                <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-slate-400">
+                    <Barcode size={14} />
+                    <span className="text-xs font-bold">{product.barcode || 'Sem código'}</span>
+                  </div>
+                  <button 
+                    onClick={() => window.location.href = `/inventory?product=${product.id}`}
+                    className="text-slate-400 hover:text-amber-600 transition-colors"
+                    title="Ver Histórico"
+                  >
+                    <History size={18} />
+                  </button>
                 </div>
-                <button 
-                  onClick={() => window.location.href = `/inventory?product=${product.id}`}
-                  className="text-slate-400 hover:text-amber-600 transition-colors"
-                  title="Ver Histórico"
-                >
-                  <History size={18} />
-                </button>
               </div>
-            </div>
-          </motion.div>
-        ))}
-      </div>
+            </motion.div>
+          ))}
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 dark:bg-slate-800/50">
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Produto</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Categoria</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Preço</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Estoque</th>
+                <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {filteredProducts.map(product => (
+                <tr key={product.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden">
+                        {product.image_url ? (
+                          <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package size={20} className="text-slate-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-black text-slate-900 dark:text-white">{product.name}</p>
+                        <p className="text-xs font-bold text-slate-400">{product.barcode || 'Sem código'}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest">
+                      {product.category}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <p className="font-black text-amber-600">R$ {product.price.toFixed(2)}</p>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex flex-col items-end">
+                      <p className={cn(
+                        "font-black",
+                        product.stock_quantity <= product.min_stock_level ? "text-rose-600" : "text-emerald-600"
+                      )}>
+                        {product.stock_quantity} un
+                      </p>
+                      {product.stock_quantity <= product.min_stock_level && (
+                        <span className="text-[8px] font-black text-rose-500 uppercase tracking-tighter">Estoque Baixo</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center justify-center gap-2">
+                      <button 
+                        onClick={() => { setAdjustingProduct(product); setShowAdjustModal(true); }}
+                        className="p-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 rounded-lg transition-all"
+                        title="Ajustar Estoque"
+                      >
+                        <Plus size={18} />
+                      </button>
+                      <button 
+                        onClick={() => { setEditingProduct(product); setShowModal(true); }}
+                        className="p-2 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 rounded-lg transition-all"
+                        title="Editar"
+                      >
+                        <Edit3 size={18} />
+                      </button>
+                      <button 
+                        onClick={() => window.location.href = `/inventory?product=${product.id}`}
+                        className="p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-all"
+                        title="Histórico"
+                      >
+                        <History size={18} />
+                      </button>
+                      <button 
+                        onClick={() => onDeleteProduct(product.id)}
+                        className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all"
+                        title="Excluir"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Product Modal */}
       <AnimatePresence>

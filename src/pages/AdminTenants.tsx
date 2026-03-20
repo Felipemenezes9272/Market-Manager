@@ -199,8 +199,8 @@ export default function AdminTenants({ tenants, onAddTenant, onUpdateTenant, onD
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Usuário</label>
-                        <input name="admin_username" required className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-purple-500/20" />
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">E-mail</label>
+                        <input name="admin_email" type="email" required className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-purple-500/20" />
                       </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Senha</label>

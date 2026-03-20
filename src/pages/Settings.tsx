@@ -75,6 +75,7 @@ export default function Settings({ user, settings, theme, setTheme, onUpdateSett
 
   const adminTabs = [
     { id: 'saas', label: 'SaaS Global', icon: Globe },
+    { id: 'ai', label: 'Integração IA', icon: Cloud },
     { id: 'profile', label: 'Meu Perfil', icon: User },
     { id: 'appearance', label: 'Aparência', icon: Palette },
     { id: 'system_admin', label: 'Manutenção', icon: Database }
@@ -189,6 +190,50 @@ export default function Settings({ user, settings, theme, setTheme, onUpdateSett
                         <option value="true">Permitir</option>
                         <option value="false">Bloquear</option>
                       </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'ai' && (
+                <div className="space-y-8">
+                  <div className="p-6 bg-indigo-50 dark:bg-indigo-500/5 rounded-3xl border border-indigo-100 dark:border-indigo-500/10 flex items-start gap-4">
+                    <Cloud className="text-indigo-600 mt-1" size={24} />
+                    <div>
+                      <h4 className="font-black text-indigo-900 dark:text-indigo-100">Configurações de Inteligência Artificial</h4>
+                      <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 mt-1">
+                        Configure as chaves de API globais para habilitar recursos de IA em todas as contas.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Provedor de IA Padrão</label>
+                      <select name="ai_provider" defaultValue={settings?.ai_provider || 'gemini'} className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-indigo-500/20">
+                        <option value="gemini">Google Gemini</option>
+                        <option value="openai">OpenAI (ChatGPT)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Chave API Gemini</label>
+                      <input 
+                        type="password" 
+                        name="gemini_api_key" 
+                        defaultValue={settings?.gemini_api_key} 
+                        placeholder="••••••••••••••••"
+                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-indigo-500/20" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Chave API OpenAI</label>
+                      <input 
+                        type="password" 
+                        name="openai_api_key" 
+                        defaultValue={settings?.openai_api_key} 
+                        placeholder="••••••••••••••••"
+                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-indigo-500/20" 
+                      />
                     </div>
                   </div>
                 </div>

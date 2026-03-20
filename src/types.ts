@@ -72,7 +72,7 @@ export interface Bill {
 
 export interface User {
   id: number;
-  username: string;
+  email: string;
   role: string;
   name: string;
   tenant_id: number | null;

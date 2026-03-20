@@ -29,13 +29,16 @@ CREATE TABLE IF NOT EXISTS tenants (
 CREATE TABLE IF NOT EXISTS app_users (
     id SERIAL PRIMARY KEY,
     tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
-    username TEXT NOT NULL,
+    email TEXT NOT NULL,
     password TEXT NOT NULL,
     role TEXT DEFAULT 'operator', -- admin, operator
     name TEXT,
     is_super_admin BOOLEAN DEFAULT FALSE,
+    email_confirmed BOOLEAN DEFAULT FALSE,
+    reset_token TEXT,
+    reset_token_expiry TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(tenant_id, username)
+    UNIQUE(tenant_id, email)
 );
 
 -- 2. Suppliers Table
@@ -172,11 +175,11 @@ CREATE TABLE IF NOT EXISTS user_settings (
 INSERT INTO tenants (name, slug) VALUES ('Market Manager', 'market-manager') ON CONFLICT (slug) DO NOTHING;
 
 -- Assigning the first tenant ID (assuming it's 1)
-INSERT INTO app_users (tenant_id, username, password, role, name, is_super_admin) VALUES 
-(1, 'felipe', '260892', 'admin', 'Felipe', TRUE),
-(1, 'admin', 'admin', 'admin', 'Administrador', FALSE),
-(1, 'caixa', 'caixa123', 'operator', 'Operador de Caixa', FALSE)
-ON CONFLICT (tenant_id, username) DO NOTHING;
+INSERT INTO app_users (tenant_id, email, password, role, name, is_super_admin, email_confirmed) VALUES 
+(1, 'felipemenezes9272@gmail.com', '260892', 'admin', 'Felipe', TRUE, TRUE),
+(1, 'admin@marketmanager.com', 'admin', 'admin', 'Administrador', FALSE, TRUE),
+(1, 'caixa@marketmanager.com', 'caixa123', 'operator', 'Operador de Caixa', FALSE, TRUE)
+ON CONFLICT (tenant_id, email) DO NOTHING;
 
 INSERT INTO settings (tenant_id, key, value) VALUES 
 (1, 'bill_alert_days', '3')

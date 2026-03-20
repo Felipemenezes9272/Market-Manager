@@ -10,22 +10,50 @@ import { motion } from 'framer-motion';
 import { cn } from '../utils';
 
 interface LoginProps {
-  onLogin: (username: string, password: string) => Promise<void>;
+  onLogin: (email: string, password: string) => Promise<void>;
   isLoading: boolean;
 }
 
 export default function Login({ onLogin, isLoading }: LoginProps) {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     try {
-      await onLogin(username, password);
+      await onLogin(email, password);
     } catch (err: any) {
       setError(err.message || 'Falha na autenticação');
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotLoading(true);
+    setForgotMessage('');
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setForgotMessage(data.message);
+        setTimeout(() => setShowForgotModal(false), 3000);
+      } else {
+        setError(data.error);
+      }
+    } catch (err) {
+      setForgotMessage('Erro ao enviar e-mail de recuperação');
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -100,11 +128,11 @@ export default function Login({ onLogin, isLoading }: LoginProps) {
               <div className="relative group">
                 <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-amber-600 transition-colors" size={20} />
                 <input 
-                  type="text" 
-                  placeholder="Usuário" 
+                  type="email" 
+                  placeholder="E-mail" 
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl outline-none font-bold text-slate-700 dark:text-white focus:ring-2 ring-amber-500/20 transition-all"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
                 />
               </div>
@@ -138,7 +166,12 @@ export default function Login({ onLogin, isLoading }: LoginProps) {
             </button>
 
             <div className="text-center">
-              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Esqueceu sua senha? <span className="text-amber-600 cursor-pointer hover:underline">Recuperar</span></p>
+              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">
+                Esqueceu sua senha? <span 
+                  onClick={() => setShowForgotModal(true)}
+                  className="text-amber-600 cursor-pointer hover:underline"
+                >Recuperar</span>
+              </p>
             </div>
           </form>
         </div>
@@ -147,6 +180,57 @@ export default function Login({ onLogin, isLoading }: LoginProps) {
           &copy; 2024 Market Manager. Todos os direitos reservados.
         </p>
       </motion.div>
+
+      {/* Forgot Password Modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-950/50 backdrop-blur-sm">
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl p-8 shadow-2xl border border-white/20"
+          >
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-2">Recuperar Senha</h2>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6 font-bold">Insira seu e-mail para receber as instruções.</p>
+            
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div className="relative group">
+                <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-amber-600 transition-colors" size={20} />
+                <input 
+                  type="email" 
+                  placeholder="E-mail cadastrado" 
+                  className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl outline-none font-bold text-slate-700 dark:text-white focus:ring-2 ring-amber-500/20 transition-all"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              {forgotMessage && (
+                <p className="text-emerald-500 text-xs font-bold bg-emerald-50 dark:bg-emerald-500/10 p-3 rounded-xl border border-emerald-100 dark:border-emerald-500/20">
+                  {forgotMessage}
+                </p>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                >
+                  CANCELAR
+                </button>
+                <button 
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="flex-1 py-4 bg-amber-600 text-white font-black rounded-2xl shadow-lg shadow-amber-600/20 hover:bg-amber-700 transition-all disabled:opacity-50"
+                >
+                  {forgotLoading ? 'ENVIANDO...' : 'ENVIAR'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

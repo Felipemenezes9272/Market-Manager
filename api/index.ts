@@ -1,12 +1,17 @@
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import { sendConfirmationEmail, sendPasswordResetEmail } from "./emailService";
 
 dotenv.config();
 
 // Initialize Supabase Client
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.warn("Supabase environment variables are missing! SUPABASE_URL:", !!supabaseUrl, "SUPABASE_SERVICE_ROLE_KEY:", !!supabaseServiceKey);
+}
 
 const supabase = (supabaseUrl && supabaseServiceKey) 
   ? createClient(supabaseUrl, supabaseServiceKey) 
@@ -136,12 +141,11 @@ const getTenantId = (req: express.Request) => {
 const bootstrapAdmin = async () => {
   if (!supabase) return;
   try {
-    // Check for existing super admin 'felipe'
-    // We use limit(1) to avoid errors if multiple exist due to previous bugs
+    // Check for existing super admin by email
     const { data: existing, error: checkError } = await supabase
       .from("app_users")
       .select("id")
-      .eq("username", "felipe")
+      .eq("email", "felipemenezes9272@gmail.com")
       .limit(1)
       .maybeSingle();
 
@@ -151,17 +155,18 @@ const bootstrapAdmin = async () => {
     }
 
     if (!existing) {
-      console.log("Bootstrapping super admin 'felipe'...");
+      console.log("Bootstrapping super admin 'felipemenezes9272@gmail.com'...");
       // Try to find the first tenant to associate with, or leave null
       const { data: firstTenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
       
       const { error: insertError } = await supabase.from("app_users").insert([{
         tenant_id: firstTenant?.id || null,
-        username: "felipe",
+        email: "felipemenezes9272@gmail.com",
         password: "260892",
         name: "Felipe Super Admin",
         role: "admin",
-        is_super_admin: true
+        is_super_admin: true,
+        email_confirmed: true
       }]);
       
       if (insertError) {
@@ -196,28 +201,40 @@ app.get("/api/health", (req, res) => {
 });
 
 app.post("/api/login", async (req, res) => {
-  const { username, password } = req.body;
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: "E-mail e senha são obrigatórios" });
+  }
+
   try {
     if (!supabase) {
       return res.status(503).json({ error: "Supabase não configurado" });
     }
 
-    // Use limit(1) to handle cases where multiple users might exist with same username/password
-    // (e.g. if bootstrap ran multiple times without tenant_id)
     const { data: user, error } = await supabase
       .from("app_users")
-      .select("id, username, role, name, tenant_id, is_super_admin")
-      .eq("username", username)
+      .select("id, email, role, name, tenant_id, is_super_admin, email_confirmed")
+      .eq("email", email)
       .eq("password", password)
       .limit(1)
       .maybeSingle();
 
     if (error) {
-      console.error("Supabase Login Error:", error);
+      console.error("Supabase Login Error:", {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
       throw error;
     }
 
     if (user) {
+      if (!user.email_confirmed && !user.is_super_admin) {
+        return res.status(401).json({ error: "E-mail não confirmado. Por favor, verifique sua caixa de entrada." });
+      }
+
       // Check tenant status if not super admin
       if (user.tenant_id && !user.is_super_admin) {
         const { data: tenant } = await supabase.from('tenants').select('status, license_end_date').eq('id', user.tenant_id).single();
@@ -232,20 +249,100 @@ app.post("/api/login", async (req, res) => {
         }
       }
       
-      console.log(`Login successful for user: ${username} (ID: ${user.id})`);
+      console.log(`Login successful for user: ${email} (ID: ${user.id})`);
       res.json(user);
     } else {
-      console.warn(`Login failed for user: ${username}`);
-      res.status(401).json({ error: "Usuário ou senha inválidos" });
+      console.warn(`Login failed for user: ${email}`);
+      res.status(401).json({ error: "E-mail ou senha inválidos" });
     }
   } catch (err: any) {
-    console.error("Login Route Error:", err);
+    console.error("Login Route Error:", err.message || err);
     res.status(500).json({ 
       error: "Erro interno no servidor", 
-      details: err.message,
-      code: err.code,
-      hint: err.hint
+      details: err.message || "Erro desconhecido"
     });
+  }
+});
+
+// Password Recovery
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const { email } = req.body;
+  try {
+    const { data: user } = await supabase.from("app_users").select("id").eq("email", email).maybeSingle();
+    if (!user) {
+      // Don't reveal if user exists for security
+      return res.json({ success: true, message: "Se o e-mail estiver cadastrado, você receberá um link de recuperação." });
+    }
+
+    const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    const expiry = new Date();
+    expiry.setHours(expiry.getHours() + 1);
+
+    await supabase.from("app_users").update({
+      reset_token: token,
+      reset_token_expiry: expiry.toISOString()
+    }).eq("id", user.id);
+
+    console.log(`Password reset requested for ${email}. Token: ${token}`);
+    
+    // Send email
+    try {
+      await sendPasswordResetEmail(email, token);
+    } catch (err) {
+      console.error("Failed to send password reset email", err);
+    }
+    
+    res.json({ success: true, message: "E-mail de recuperação enviado com sucesso!" });
+  } catch (err: any) {
+    res.status(500).json({ error: "Erro ao processar recuperação de senha" });
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  const { token, newPassword } = req.body;
+  try {
+    const { data: user } = await supabase.from("app_users")
+      .select("id")
+      .eq("reset_token", token)
+      .gt("reset_token_expiry", new Date().toISOString())
+      .maybeSingle();
+
+    if (!user) {
+      return res.status(400).json({ error: "Token inválido ou expirado" });
+    }
+
+    await supabase.from("app_users").update({
+      password: newPassword,
+      reset_token: null,
+      reset_token_expiry: null
+    }).eq("id", user.id);
+
+    res.json({ success: true, message: "Senha alterada com sucesso!" });
+  } catch (err: any) {
+    res.status(500).json({ error: "Erro ao redefinir senha" });
+  }
+});
+
+app.get("/api/auth/confirm-email", async (req, res) => {
+  const { email } = req.query;
+  try {
+    const { error } = await supabase.from("app_users").update({
+      email_confirmed: true
+    }).eq("email", email);
+
+    if (error) throw error;
+
+    res.send(`
+      <html>
+        <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+          <h2 style="color: #d97706;">E-mail Confirmado!</h2>
+          <p>Sua conta foi ativada com sucesso.</p>
+          <a href="/" style="display: inline-block; background: #d97706; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Ir para o Login</a>
+        </body>
+      </html>
+    `);
+  } catch (err: any) {
+    res.status(500).send("Erro ao confirmar e-mail");
   }
 });
 
@@ -293,7 +390,7 @@ app.get("/api/tenants", async (req, res) => {
 
 app.post("/api/tenants", async (req, res) => {
   if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
-  const { name, slug, admin_username, admin_password, admin_name, license_type } = req.body;
+  const { name, slug, admin_email, admin_password, admin_name, license_type } = req.body;
   
   // Calculate license end date
   let license_end_date = new Date();
@@ -341,7 +438,7 @@ app.post("/api/tenants", async (req, res) => {
   if (!tenant) return res.status(400).json({ error: "Erro ao criar loja" });
 
   const { error: uErr } = await supabase.from("app_users").insert([{
-    tenant_id: tenant.id, username: admin_username, password: admin_password, name: admin_name, role: 'admin'
+    tenant_id: tenant.id, email: admin_email, password: admin_password, name: admin_name, role: 'admin', email_confirmed: true
   }]);
   if (uErr) return res.status(400).json({ error: uErr.message });
   res.json({ success: true, tenantId: tenant.id });
@@ -417,32 +514,43 @@ app.get("/api/admin/users", async (req, res) => {
 
 app.post("/api/admin/users", async (req, res) => {
   if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
-  const { name, username, password, role, tenant_id, is_super_admin } = req.body;
+  const { name, email, password, role, tenant_id, is_super_admin } = req.body;
   const { data, error } = await supabase.from("app_users").insert([{
     name,
-    username,
+    email,
     password,
     role,
     tenant_id: tenant_id ? Number(tenant_id) : null,
-    is_super_admin: Boolean(is_super_admin)
+    is_super_admin: Boolean(is_super_admin),
+    email_confirmed: false // New users must confirm email
   }]).select().single();
   
   if (error) {
     console.error("Error creating user:", error);
     return res.status(400).json({ error: error.message });
   }
+
+  // Send confirmation email
+  try {
+    await sendConfirmationEmail(email, name);
+    console.log(`Confirmation email sent to ${email}`);
+  } catch (err) {
+    console.error("Failed to send confirmation email", err);
+  }
+
   res.json(data);
 });
 
 app.put("/api/admin/users/:id", async (req, res) => {
   if (!(req as any).is_super_admin) return res.status(403).json({ error: "Acesso negado" });
-  const { name, username, password, role, tenant_id, is_super_admin } = req.body;
+  const { name, email, password, role, tenant_id, is_super_admin, email_confirmed } = req.body;
   const updateData: any = { 
     name, 
-    username, 
+    email, 
     role, 
     tenant_id: tenant_id ? Number(tenant_id) : null, 
-    is_super_admin: Boolean(is_super_admin) 
+    is_super_admin: Boolean(is_super_admin),
+    email_confirmed: Boolean(email_confirmed)
   };
   if (password) updateData.password = password;
   const { error } = await supabase.from("app_users").update(updateData).eq("id", req.params.id);
@@ -610,10 +718,36 @@ app.post("/api/cash-flow/close", async (req, res) => {
 app.post("/api/admin/settings", async (req, res) => {
   if (!isSuperAdmin(req)) return res.status(403).json({ error: "Acesso negado" });
   
-  // In a real SaaS, this would update a global_settings table
-  // For now, we'll just return success
-  console.log("Super Admin updated global settings:", req.body);
-  res.json({ success: true, message: "Configurações globais atualizadas com sucesso!" });
+  const settings = req.body;
+  try {
+    for (const [key, value] of Object.entries(settings)) {
+      // Store global settings (tenant_id = null, user_id = null)
+      const { data: existing } = await supabase.from("settings")
+        .select("id")
+        .is("tenant_id", null)
+        .is("user_id", null)
+        .eq("key", key)
+        .maybeSingle();
+      
+      if (existing) {
+        await supabase.from("settings")
+          .update({ value: String(value) })
+          .eq("id", existing.id);
+      } else {
+        await supabase.from("settings")
+          .insert([{
+            tenant_id: null,
+            user_id: null,
+            key,
+            value: String(value)
+          }]);
+      }
+    }
+    res.json({ success: true, message: "Configurações globais atualizadas com sucesso!" });
+  } catch (err: any) {
+    console.error("Admin Settings Update Error:", err);
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Settings
@@ -622,30 +756,38 @@ app.get("/api/settings", async (req, res) => {
   const userIdHeader = req.headers['x-user-id'];
   const userId = userIdHeader ? Number(userIdHeader) : null;
   
-  if (!tenant_id && !isSuperAdmin(req)) {
-    return res.json({});
+  try {
+    // 1. Get global settings (system defaults)
+    const { data: globalSettings } = await supabase.from("settings")
+      .select("*")
+      .is("tenant_id", null)
+      .is("user_id", null);
+    
+    // 2. Get tenant settings
+    const { data: tenantSettings } = tenant_id 
+      ? await supabase.from("settings").select("*").eq("tenant_id", tenant_id).is("user_id", null)
+      : { data: [] };
+    
+    // 3. Get user specific settings (preferences)
+    const { data: userSettings } = userId 
+      ? await supabase.from("settings").select("*").eq("user_id", userId)
+      : { data: [] };
+    
+    // Merge order: Global < Tenant < User
+    const settingsObj = [
+      ...(globalSettings || []),
+      ...(tenantSettings || []),
+      ...(userSettings || [])
+    ].reduce((acc: any, curr: any) => { 
+      acc[curr.key] = curr.value; 
+      return acc; 
+    }, {});
+    
+    res.json(settingsObj);
+  } catch (err) {
+    console.error("Settings Fetch Error:", err);
+    res.json({});
   }
-
-  let tenantQuery = supabase.from("settings").select("*").is("user_id", null);
-  let userQuery = userId ? supabase.from("settings").select("*").eq("user_id", userId) : null;
-
-  if (tenant_id) {
-    tenantQuery = tenantQuery.eq("tenant_id", tenant_id);
-    if (userQuery) userQuery = userQuery.eq("tenant_id", tenant_id);
-  }
-
-  // Get tenant settings
-  const { data: tenantSettings } = await tenantQuery;
-  
-  // Get user specific settings (preferences)
-  const { data: userSettings } = userQuery ? await userQuery : { data: [] };
-  
-  const settingsObj = [...(tenantSettings || []), ...(userSettings || [])].reduce((acc: any, curr: any) => { 
-    acc[curr.key] = curr.value; 
-    return acc; 
-  }, {}) || {};
-  
-  res.json(settingsObj);
 });
 
 app.post("/api/settings", async (req, res) => {
@@ -660,7 +802,7 @@ app.post("/api/settings", async (req, res) => {
         'theme', 'primary_color', 'sidebar_collapsed', 'font_size', 'interface_density',
         'pos_auto_focus', 'pos_auto_finalize', 'pos_auto_drawer', 'pos_confirm_cancel',
         'pos_default_payment', 'pos_auto_print', 'pos_show_change', 'pos_fast_mode',
-        'pos_shortcuts_enabled', 'dashboard_config'
+        'pos_shortcuts_enabled', 'dashboard_config', 'view_mode'
       ];
       const isUserSpecific = userSpecificKeys.includes(key);
       

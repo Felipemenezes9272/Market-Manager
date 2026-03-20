@@ -29,7 +29,7 @@ export default function AdminUsers({ users, tenants, onAddUser, onUpdateUser, on
 
   const filteredUsers = users.filter(u => 
     u.name.toLowerCase().includes(search.toLowerCase()) || 
-    u.username.toLowerCase().includes(search.toLowerCase())
+    u.email.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -73,7 +73,7 @@ export default function AdminUsers({ users, tenants, onAddUser, onUpdateUser, on
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <input 
             type="text" 
-            placeholder="Buscar por nome ou usuário..." 
+            placeholder="Buscar por nome ou e-mail..." 
             className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl outline-none font-bold text-slate-700 dark:text-white"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -97,7 +97,7 @@ export default function AdminUsers({ users, tenants, onAddUser, onUpdateUser, on
                 </div>
                 <div>
                   <h4 className="text-xl font-black text-slate-900 dark:text-white">{user.name}</h4>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">@{user.username}</p>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{user.email}</p>
                 </div>
               </div>
               <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -172,8 +172,8 @@ export default function AdminUsers({ users, tenants, onAddUser, onUpdateUser, on
                 </div>
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Usuário (Login)</label>
-                    <input name="username" defaultValue={editingUser?.username} required className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-purple-500/20" />
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">E-mail (Login)</label>
+                    <input name="email" type="email" defaultValue={editingUser?.email} required className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-purple-500/20" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Senha</label>
