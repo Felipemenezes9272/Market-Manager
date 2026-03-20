@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     name TEXT NOT NULL,
     slug TEXT UNIQUE NOT NULL,
     status TEXT DEFAULT 'active', -- active, suspended
+    license_end_date TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
