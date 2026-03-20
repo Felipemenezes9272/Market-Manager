@@ -178,6 +178,7 @@ INSERT INTO tenants (name, slug) VALUES ('Market Manager', 'market-manager') ON 
 -- Assigning the first tenant ID (assuming it's 1)
 INSERT INTO app_users (tenant_id, email, password, role, name, is_super_admin, email_confirmed) VALUES 
 (1, 'felipemenezes9272@gmail.com', '260892', 'admin', 'Felipe', TRUE, TRUE),
+(1, 'felipe_fmcosta@hotmail.com', '260892', 'admin', 'Felipe Costa', TRUE, TRUE),
 (1, 'admin@marketmanager.com', 'admin', 'admin', 'Administrador', FALSE, TRUE),
 (1, 'caixa@marketmanager.com', 'caixa123', 'operator', 'Operador de Caixa', FALSE, TRUE)
 ON CONFLICT (tenant_id, email) DO NOTHING;

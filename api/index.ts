@@ -150,43 +150,44 @@ const getTenantId = (req: express.Request) => {
 const bootstrapAdmin = async () => {
   if (!supabase) return;
   try {
-    // Check for existing super admin by email
-    const { data: existing, error: checkError } = await supabase
-      .from("app_users")
-      .select("id")
-      .eq("email", "felipemenezes9272@gmail.com")
-      .limit(1)
-      .maybeSingle();
+    const admins = [
+      { email: "felipemenezes9272@gmail.com", name: "Felipe" },
+      { email: "felipe_fmcosta@hotmail.com", name: "Felipe Costa" }
+    ];
 
-    if (checkError) {
-      console.error("Bootstrap check error:", checkError);
-      return;
-    }
+    for (const admin of admins) {
+      const { data: existing } = await supabase
+        .from("app_users")
+        .select("id")
+        .eq("email", admin.email)
+        .limit(1)
+        .maybeSingle();
 
-    if (!existing) {
-      console.log("Bootstrapping super admin 'felipemenezes9272@gmail.com'...");
-      // Try to find the first tenant to associate with, or leave null
-      const { data: firstTenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
-      
-      const { error: insertError } = await supabase.from("app_users").insert([{
-        tenant_id: firstTenant?.id || null,
-        email: "felipemenezes9272@gmail.com",
-        password: "260892",
-        name: "Felipe Super Admin",
-        role: "admin",
-        is_super_admin: true,
-        email_confirmed: true
-      }]);
-      
-      if (insertError) {
-        console.error("Bootstrap insert error:", insertError);
+      if (!existing) {
+        console.log(`Bootstrapping super admin '${admin.email}'...`);
+        const { data: firstTenant } = await supabase.from("tenants").select("id").limit(1).maybeSingle();
+        
+        await supabase.from("app_users").insert([{
+          tenant_id: firstTenant?.id || null,
+          email: admin.email,
+          password: "260892",
+          name: admin.name,
+          role: "admin",
+          is_super_admin: true,
+          email_confirmed: true
+        }]);
       }
     }
   } catch (err) {
     console.error("Bootstrap unexpected error:", err);
   }
 };
-// bootstrapAdmin(); // Removed to prevent 500 errors on Vercel cold starts
+
+// Route to manually trigger bootstrap if needed
+app.get("/api/bootstrap", async (req, res) => {
+  await bootstrapAdmin();
+  res.json({ message: "Bootstrap process completed" });
+});
 
 // LGPD - Data Protection Routes
 app.post("/api/lgpd/request-data", async (req, res) => {
