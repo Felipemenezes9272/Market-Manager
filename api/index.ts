@@ -6,14 +6,14 @@ import { sendConfirmationEmail, sendPasswordResetEmail } from "./emailService";
 dotenv.config();
 
 // Initialize Supabase Client
-const supabaseUrl = process.env.SUPABASE_URL || "";
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.warn("Supabase environment variables are missing! SUPABASE_URL:", !!supabaseUrl, "SUPABASE_SERVICE_ROLE_KEY:", !!supabaseServiceKey);
+if (!supabaseUrl || !supabaseServiceKey || supabaseUrl === "undefined" || supabaseServiceKey === "undefined") {
+  console.warn("Supabase environment variables are missing or invalid!");
 }
 
-const supabase = (supabaseUrl && supabaseServiceKey) 
+const supabase = (supabaseUrl && supabaseServiceKey && supabaseUrl !== "undefined" && supabaseServiceKey !== "undefined") 
   ? createClient(supabaseUrl, supabaseServiceKey) 
   : null as any;
 
@@ -62,10 +62,19 @@ app.use("/api", async (req, res, next) => {
   }
   
   const userId = Number(userIdHeader);
-  const { data: user, error: userErr } = await supabase.from('app_users').select('tenant_id, is_super_admin').eq('id', userId).single();
+  if (isNaN(userId)) {
+    return res.status(401).json({ error: "ID de usuário inválido" });
+  }
+
+  const { data: user, error: userErr } = await supabase.from('app_users').select('*').eq('id', userId).maybeSingle();
   
-  if (userErr || !user) {
-    console.error(`Auth Middleware Error for userId ${userId}:`, userErr || "User not found");
+  if (userErr) {
+    console.error(`Auth Middleware DB Error for userId ${userId}:`, userErr);
+    return res.status(500).json({ error: "Erro ao validar usuário", details: userErr.message });
+  }
+
+  if (!user) {
+    console.warn(`Auth Middleware: User ${userId} not found`);
     return res.status(401).json({ error: "Usuário não encontrado" });
   }
 
@@ -137,7 +146,7 @@ const getTenantId = (req: express.Request) => {
 
 // --- API Routes ---
 
-// Bootstrap Super Admin
+// Bootstrap Super Admin - Disabled top-level call to prevent Vercel timeouts
 const bootstrapAdmin = async () => {
   if (!supabase) return;
   try {
@@ -177,7 +186,7 @@ const bootstrapAdmin = async () => {
     console.error("Bootstrap unexpected error:", err);
   }
 };
-bootstrapAdmin();
+// bootstrapAdmin(); // Removed to prevent 500 errors on Vercel cold starts
 
 // LGPD - Data Protection Routes
 app.post("/api/lgpd/request-data", async (req, res) => {
@@ -209,25 +218,29 @@ app.post("/api/login", async (req, res) => {
 
   try {
     if (!supabase) {
-      return res.status(503).json({ error: "Supabase não configurado" });
+      console.error("Login Error: Supabase client is null. Check environment variables.");
+      return res.status(503).json({ 
+        error: "Serviço indisponível", 
+        details: "O cliente do banco de dados não foi inicializado corretamente no Vercel. Verifique as variáveis de ambiente SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY." 
+      });
     }
 
+    console.log(`Attempting login for: ${email}`);
     const { data: user, error } = await supabase
       .from("app_users")
-      .select("id, email, role, name, tenant_id, is_super_admin, email_confirmed")
+      .select("*")
       .eq("email", email)
       .eq("password", password)
       .limit(1)
       .maybeSingle();
 
     if (error) {
-      console.error("Supabase Login Error:", {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint
+      console.error("Supabase Login Query Error:", error);
+      return res.status(500).json({ 
+        error: "Erro na consulta ao banco de dados", 
+        details: error.message,
+        code: error.code
       });
-      throw error;
     }
 
     if (user) {
