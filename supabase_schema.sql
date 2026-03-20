@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS settings (
     user_id INTEGER REFERENCES app_users(id) ON DELETE CASCADE,
     key TEXT NOT NULL,
     value TEXT,
-    UNIQUE(tenant_id, user_id, key)
+    UNIQUE(tenant_id, key)
 );
 
 -- 11. Inventory Logs Table
