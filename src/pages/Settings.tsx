@@ -223,6 +223,7 @@ export default function Settings({ user, settings, theme, setTheme, onUpdateSett
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Chave API Gemini</label>
                       <div className="relative">
                         <input 
+                          key={settings?.gemini_api_key ? 'has-key' : 'no-key'}
                           type={showGeminiKey ? "text" : "password"} 
                           name="gemini_api_key" 
                           defaultValue={settings?.gemini_api_key} 
@@ -237,11 +238,15 @@ export default function Settings({ user, settings, theme, setTheme, onUpdateSett
                           {showGeminiKey ? <EyeOff size={20} /> : <Eye size={20} />}
                         </button>
                       </div>
+                      <p className="text-[10px] text-slate-500 mt-1 ml-2">
+                        Obtenha sua chave em <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">Google AI Studio</a>
+                      </p>
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Chave API OpenAI</label>
                       <div className="relative">
                         <input 
+                          key={settings?.openai_api_key ? 'has-key-oa' : 'no-key-oa'}
                           type={showOpenAIKey ? "text" : "password"} 
                           name="openai_api_key" 
                           defaultValue={settings?.openai_api_key} 
@@ -256,6 +261,9 @@ export default function Settings({ user, settings, theme, setTheme, onUpdateSett
                           {showOpenAIKey ? <EyeOff size={20} /> : <Eye size={20} />}
                         </button>
                       </div>
+                      <p className="text-[10px] text-slate-500 mt-1 ml-2">
+                        Obtenha sua chave em <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">OpenAI Dashboard</a>
+                      </p>
                     </div>
                   </div>
                 </div>

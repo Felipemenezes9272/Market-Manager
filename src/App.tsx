@@ -249,8 +249,13 @@ export default function App() {
     try {
       const apiKey = settings?.gemini_api_key || process.env.GEMINI_API_KEY;
       
-      if (!apiKey || apiKey === 'undefined' || apiKey === '') {
-        throw new Error("Chave de API não configurada. Verifique as configurações de Integração IA.");
+      if (!apiKey || apiKey === 'undefined' || apiKey === '' || apiKey === 'TODO_KEYHERE') {
+        throw new Error("Chave de API não configurada. Por favor, vá em Configurações > Integração IA e insira uma chave válida do Google Gemini.");
+      }
+
+      // Basic validation: Google API keys typically start with AIza
+      if (apiKey.length < 20) {
+        throw new Error("A chave de API parece ser inválida (muito curta). Verifique as configurações de Integração IA.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -270,7 +275,17 @@ export default function App() {
       setAiInsights(result.text || '');
     } catch (err: any) {
       console.error('AI Analysis failed:', err);
-      addToast(err.message || "Falha na análise de IA", "error");
+      
+      let errorMessage = "Falha na análise de IA";
+      const errorString = typeof err === 'string' ? err : (err.message || JSON.stringify(err));
+      
+      if (errorString.includes("API key not valid") || errorString.includes("API_KEY_INVALID")) {
+        errorMessage = "Chave de API inválida. Por favor, verifique a chave configurada em Configurações > Integração IA.";
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      addToast(errorMessage, "error");
     } finally {
       setIsAnalyzing(false);
     }
