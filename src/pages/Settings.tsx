@@ -13,7 +13,9 @@ import {
   Moon,
   Sun,
   Monitor,
-  Cloud
+  Cloud,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '../utils';
@@ -43,6 +45,8 @@ export default function Settings({ user, settings, theme, setTheme, onUpdateSett
     showLowStock: true,
     showExpiryAlerts: true
   });
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showOpenAIKey, setShowOpenAIKey] = useState(false);
 
   // Sync local state with props when they change
   React.useEffect(() => {
@@ -217,23 +221,41 @@ export default function Settings({ user, settings, theme, setTheme, onUpdateSett
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Chave API Gemini</label>
-                      <input 
-                        type="password" 
-                        name="gemini_api_key" 
-                        defaultValue={settings?.gemini_api_key} 
-                        placeholder="••••••••••••••••"
-                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-indigo-500/20" 
-                      />
+                      <div className="relative">
+                        <input 
+                          type={showGeminiKey ? "text" : "password"} 
+                          name="gemini_api_key" 
+                          defaultValue={settings?.gemini_api_key} 
+                          placeholder="••••••••••••••••"
+                          className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-indigo-500/20 pr-14" 
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowGeminiKey(!showGeminiKey)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition-colors"
+                        >
+                          {showGeminiKey ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Chave API OpenAI</label>
-                      <input 
-                        type="password" 
-                        name="openai_api_key" 
-                        defaultValue={settings?.openai_api_key} 
-                        placeholder="••••••••••••••••"
-                        className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-indigo-500/20" 
-                      />
+                      <div className="relative">
+                        <input 
+                          type={showOpenAIKey ? "text" : "password"} 
+                          name="openai_api_key" 
+                          defaultValue={settings?.openai_api_key} 
+                          placeholder="••••••••••••••••"
+                          className="w-full px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl outline-none font-bold focus:ring-2 ring-indigo-500/20 pr-14" 
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowOpenAIKey(!showOpenAIKey)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 transition-colors"
+                        >
+                          {showOpenAIKey ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
