@@ -3,5 +3,8 @@
   "description": "Sistema SaaS para gerenciamento de pedidos de revendedoras de cosméticos.",
   "requestFramePermissions": [
     "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }

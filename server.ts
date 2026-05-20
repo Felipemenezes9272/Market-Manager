@@ -1,14 +1,10 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import apiApp from "./api/index";
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
@@ -16,6 +12,8 @@ async function startServer() {
 
   // Use the API routes from api/index.ts
   app.use(apiApp);
+
+  const distPath = path.join(process.cwd(), "dist");
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
@@ -25,9 +23,9 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, "dist")));
+    app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
